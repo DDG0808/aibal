@@ -1,0 +1,114 @@
+/* 全局样式重置 */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+:root {
+  /* 深色主题颜色 (默认) */
+  --color-bg: #121212;
+  --color-bg-secondary: #1e1e1e;
+  --color-bg-tertiary: #2a2a2a;
+  --color-bg-card: #1e1e1e;
+  --color-bg-hover: #2a2a2a;
+  --color-text: #ffffff;
+  --color-text-secondary: #a0a0a0;
+  --color-text-tertiary: #666666;
+  --color-accent: #d97706;
+  --color-accent-hover: #f59e0b;
+  --color-accent-green: #22c55e;
+  --color-accent-yellow: #facc15;
+  --color-accent-red: #ef4444;
+  --color-accent-blue: #3b82f6;
+  --color-accent-purple: #8b5cf6;
+  --color-border: #333333;
+  --color-border-light: #404040;
+
+  /* 侧边栏 */
+  --sidebar-width: 240px;
+  --sidebar-bg: #1e1e1e;
+  --sidebar-item-hover: #2a2a2a;
+  --sidebar-item-active: #2a2a2a;
+
+  /* 间距 */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+
+  /* 圆角 */
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* 阴影 */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.5);
+
+  /* 过渡 */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.25s ease;
+}
+
+/* 浅色模式 */
+@media (prefers-color-scheme: light) {
+  :root {
+    --color-bg: #f5f5f5;
+    --color-bg-secondary: #ffffff;
+    --color-bg-tertiary: #fafafa;
+    --color-bg-card: #ffffff;
+    --color-bg-hover: #f0f0f0;
+    --color-text: #1a1a1a;
+    --color-text-secondary: #666666;
+    --color-text-tertiary: #999999;
+    --color-border: #e5e5e5;
+    --color-border-light: #d0d0d0;
+    --sidebar-bg: #ffffff;
+    --sidebar-item-hover: #f5f5f5;
+    --sidebar-item-active: #f0f0f0;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+    --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+    --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+  }
+}
+
+html,
+body {
+  height: 100%;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text);
+  background-color: var(--color-bg);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+#app {
+  height: 100%;
+}
+
+/* 滚动条样式 */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-text-secondary);
+}

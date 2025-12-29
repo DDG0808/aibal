@@ -1,0 +1,101 @@
+[package]
+name = "cuk"
+version = "0.1.0"
+description = "Claude Usage Tracker - macOS 菜单栏应用"
+authors = ["CUK Team"]
+license = "MIT"
+repository = "https://github.com/cuk-app/cuk"
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "cuk_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.5", features = [] }
+
+[dependencies]
+# Tauri 核心
+tauri = { version = "2.9", features = ["tray-icon", "macos-private-api"] }
+tauri-plugin-store = "2.4"
+tauri-plugin-notification = "2.3"
+tauri-plugin-log = "2"
+
+# 序列化
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# 日志
+log = "0.4"
+
+# Phase 2: 错误处理
+thiserror = "2.0"
+anyhow = "1.0"
+
+# Phase 2: QuickJS 运行时
+# ⚠️ 注意：不启用 allocator feature 以保证 set_memory_limit 生效
+rquickjs = { version = "0.6", features = [
+    "bindgen",      # 自动生成 FFI 绑定
+    "classes",      # 支持 ES6 class
+    "loader",       # 模块加载器
+    "futures",      # async/await 支持
+    "parallel",     # 多线程 Runtime
+    "macro",        # 宏支持 (class, methods)
+] }
+
+# Phase 2: URL 解析
+url = "2"
+
+# Phase 2: 目录路径
+dirs = "5"
+
+# Phase 2: 异步运行时
+tokio = { version = "1", features = ["rt-multi-thread", "sync", "time", "macros", "fs"] }
+tokio-util = "0.7"  # CancellationToken for timer cancellation
+futures = "0.3"
+
+# Phase 2: 沙盒 fetch API
+# stream feature 用于流式响应体限制，防止恶意服务器绕过 Content-Length 检查
+reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream"], default-features = false }
+
+# Phase 2: 热重载文件监听
+notify = "6.1"
+
+# Phase 2: 时间处理
+chrono = { version = "0.4", features = ["serde"] }
+
+# Phase 3: 可靠性层
+# 限流器 - 令牌桶算法实现
+governor = "0.6"
+# 高性能异步缓存
+moka = { version = "0.12", features = ["future"] }
+# 并发安全的 HashMap，用于缓存索引
+dashmap = "5.5"
+
+# Phase 5A: 安全工具链
+ed25519-dalek = { version = "2.1", features = ["rand_core"] }
+sha2 = "0.10"
+base64 = "0.22"
+zip = "2.1"
+tempfile = "3"
+rand = "0.8"  # 用于密钥生成示例
+
+# Unix: libc for O_NOFOLLOW (TOCTOU protection)
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+# macOS Keychain
+[target.'cfg(target_os = "macos")'.dependencies]
+security-framework = "3"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
+[profile.release]
+panic = "abort"
+codegen-units = 1
+lto = true
+opt-level = "s"
+strip = true

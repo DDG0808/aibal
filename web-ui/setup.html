@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Setup Wizard</title>
+    <link rel="stylesheet" href="index.css">
+    <style>
+        /* Setup Window Specifics */
+        body {
+            width: 400px;
+            height: 500px;
+            background: var(--color-bg);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 32px;
+        }
+
+        .wizard-container {
+            width: 100%;
+            max-width: 320px;
+            display: flex;
+            flex-direction: column;
+            gap: 24px;
+            text-align: center;
+        }
+
+        .icon-large {
+            width: 64px;
+            height: 64px;
+            background: rgba(255, 255, 255, 0.1);
+            border-radius: 16px;
+            margin: 0 auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #DCA269;
+        }
+
+        h1 {
+            font-size: 24px;
+            margin-bottom: 8px;
+        }
+
+        p {
+            color: var(--color-text-secondary);
+            font-size: 14px;
+            line-height: 1.5;
+        }
+
+        .input-group {
+            text-align: left;
+        }
+
+        .input-field {
+            width: 100%;
+            background: rgba(255, 255, 255, 0.08);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            padding: 12px;
+            color: white;
+            font-size: 14px;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        .input-field:focus {
+            border-color: var(--color-accent-orange);
+            box-shadow: 0 0 0 4px rgba(255, 159, 10, 0.2);
+        }
+
+        .btn-primary {
+            background: var(--color-accent-blue);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            padding: 12px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s;
+            width: 100%;
+        }
+
+        .btn-primary:hover {
+            background: #0071e3;
+        }
+
+        .btn-secondary {
+            background: transparent;
+            color: var(--color-text-secondary);
+            border: none;
+            padding: 8px;
+            font-size: 13px;
+            cursor: pointer;
+        }
+
+        .btn-secondary:hover {
+            color: white;
+            text-decoration: underline;
+        }
+
+        .step-dots {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 16px;
+        }
+
+        .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.2);
+        }
+
+        .dot.active {
+            background: white;
+            transform: scale(1.2);
+        }
+    </style>
+</head>
+
+<body>
+
+    <div class="wizard-container">
+
+        <div class="icon-large">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"></path>
+            </svg>
+        </div>
+
+        <div>
+            <h1>Welcome</h1>
+            <p>Let's get your Claude usage tracking set up. You'll need your session key to get started.</p>
+        </div>
+
+        <div class="input-group">
+            <label class="text-label" style="margin-bottom: 8px; display:block;">Session Key (sk-ant-...)</label>
+            <input type="password" class="input-field" placeholder="sk-ant-...">
+            <a href="#" class="text-sub"
+                style="display:block; margin-top: 8px; color: var(--color-accent-blue); text-decoration: none;">How to
+                get my key?</a>
+        </div>
+
+        <button class="btn-primary">Connect Account</button>
+
+        <button class="btn-secondary">Skip for now</button>
+
+        <div class="step-dots">
+            <div class="dot active"></div>
+            <div class="dot"></div>
+            <div class="dot"></div>
+        </div>
+
+    </div>
+
+</body>
+
+</html>

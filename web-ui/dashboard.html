@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Claude Tracker Dashboard</title>
+  <link rel="stylesheet" href="index.css">
+  <style>
+    /* Dashboard Specific Styles */
+    body {
+      width: 320px;
+      height: auto;
+      background: rgba(0,0,0,0.5); /* Transparent for tray feel */
+      padding: 12px;
+    }
+
+    .main-container {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    /* Header */
+    .app-header {
+      padding: 0 4px;
+    }
+    
+    .status-indicator {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background-color: var(--color-accent-green);
+      box-shadow: 0 0 8px var(--color-accent-green);
+      animation: breathe 3s infinite ease-in-out;
+    }
+
+    @keyframes breathe {
+      0%, 100% { opacity: 0.6; transform: scale(0.9); }
+      50% { opacity: 1; transform: scale(1.1); }
+    }
+
+    /* Cards */
+    .card-session {
+      grid-column: 1 / -1; /* Full width */
+      padding: 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      background: linear-gradient(135deg, rgba(40,40,40,0.7) 0%, rgba(20,20,20,0.8) 100%);
+    }
+
+    .circular-progress {
+      width: 80px;
+      height: 80px;
+      border-radius: 50%;
+      background: conic-gradient(var(--color-accent-green) 25%, rgba(255,255,255,0.1) 0);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+    
+    .circular-progress::before {
+      content: "";
+      position: absolute;
+      width: 68px;
+      height: 68px;
+      background: #1c1c1e; /* Matches card bg roughly */
+      border-radius: 50%;
+    }
+
+    .progress-value {
+      position: relative;
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--color-text-primary);
+    }
+
+    .card-small {
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      min-height: 100px;
+    }
+
+    /* Footer */
+    .app-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 4px 8px;
+      border-top: 1px solid rgba(255,255,255,0.05);
+      margin-top: 4px;
+      padding-top: 12px;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="main-container">
+    
+    <!-- Header -->
+    <div class="app-header flex-row justify-between">
+      <div class="flex-row gap-sm">
+        <!-- Claude Stylized Icon (SVG) -->
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5" stroke="#DCA269"></path>
+        </svg>
+        <span style="font-weight: 600; font-size: 14px;">Claude Tracker</span>
+      </div>
+      <div class="flex-row gap-md">
+        <div class="status-indicator"></div>
+        <div class="btn-icon" title="Refresh">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 4v6h-6"></path><path d="M1 20v-6h6"></path>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Bento Grid Content -->
+    <div class="bento-grid">
+      
+      <!-- Main Card: Session Usage -->
+      <div class="glass-panel card-session">
+        <div class="flex-col gap-xs">
+          <span class="text-label">Session Usage</span>
+          <span class="text-value" style="font-size: 32px;">25%</span>
+          <span class="text-sub">Resets at 4:00 PM</span>
+        </div>
+        <div class="circular-progress">
+          <span class="progress-value">25%</span>
+        </div>
+      </div>
+
+      <!-- Small Card 1: Weekly -->
+      <div class="glass-panel card-small">
+        <div class="flex-row justify-between">
+            <span class="text-label">Weekly</span>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--color-accent-blue)" stroke-width="2">
+                <rect x="2" y="7" width="20" height="14" rx="2" ry="2"></rect><path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"></path>
+            </svg>
+        </div>
+        <div class="flex-col" style="margin-top: auto;">
+          <span class="text-value">468k</span>
+          <div style="width: 100%; height: 4px; background: rgba(255,255,255,0.1); border-radius: 2px; margin-top: 6px;">
+            <div style="width: 45%; height: 100%; background: var(--color-accent-blue); border-radius: 2px;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Small Card 2: Cost -->
+      <div class="glass-panel card-small">
+        <div class="flex-row justify-between">
+             <span class="text-label">Cost</span>
+             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#FFD60A" stroke-width="2">
+                <line x1="12" y1="1" x2="12" y2="23"></line>
+                <path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path>
+             </svg>
+        </div>
+        <div class="flex-col" style="margin-top: auto;">
+          <span class="text-value">$4.20</span>
+          <span class="text-sub">Limit: $50.00</span>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- Footer Actions -->
+    <div class="app-footer">
+      <span class="text-sub" style="font-size: 11px; opacity: 0.6;">Updated 1m ago</span>
+      <div class="flex-row gap-sm">
+        <div class="btn-icon" title="Settings" onclick="window.location.href='settings.html'">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </div>
+        <div class="btn-icon" title="Quit">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path>
+            <line x1="12" y1="2" x2="12" y2="12"></line>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+</body>
+</html>

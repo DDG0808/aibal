@@ -1,0 +1,211 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cuk.app/schemas/manifest.schema.json",
+  "title": "CUK Plugin Manifest",
+  "description": "CUK 插件清单文件 Schema - 定义插件元数据和签名信息",
+  "version": "1.1.0",
+  "type": "object",
+  "required": ["id", "name", "version", "apiVersion", "pluginType", "entry"],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$",
+      "minLength": 2,
+      "maxLength": 64,
+      "description": "插件唯一标识符，使用 kebab-case 格式"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "description": "插件显示名称"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+\\.\\d+(-[a-zA-Z0-9.]+)?$",
+      "description": "语义化版本号 (SemVer)"
+    },
+    "apiVersion": {
+      "type": "string",
+      "pattern": "^\\d+\\.\\d+$",
+      "description": "API 兼容版本号 (major.minor)"
+    },
+    "pluginType": {
+      "type": "string",
+      "enum": ["data", "event", "hybrid"],
+      "description": "插件类型: data=数据插件, event=事件插件, hybrid=混合插件"
+    },
+    "entry": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+\\.js$",
+      "default": "plugin.js",
+      "description": "插件入口文件 (相对路径)，必须是 .js 文件"
+    },
+    "dataType": {
+      "type": "string",
+      "enum": ["usage", "balance", "status", "custom"],
+      "description": "数据类型 (DataPlugin/HybridPlugin 必填)"
+    },
+    "author": {
+      "type": "string",
+      "maxLength": 128,
+      "description": "插件作者"
+    },
+    "description": {
+      "type": "string",
+      "maxLength": 512,
+      "description": "插件描述"
+    },
+    "homepage": {
+      "type": "string",
+      "format": "uri",
+      "description": "插件主页 URL"
+    },
+    "icon": {
+      "type": "string",
+      "pattern": "^[a-zA-Z0-9_-]+\\.(png|svg)$",
+      "description": "图标文件名 (相对路径)"
+    },
+    "refreshIntervalMs": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 3600000,
+      "default": 30000,
+      "description": "自动刷新间隔 (毫秒)，0 表示手动刷新"
+    },
+    "permissions": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^call:[a-z][a-z0-9-]*:[a-z][a-zA-Z0-9]*$"
+      },
+      "uniqueItems": true,
+      "description": "跨插件调用权限声明，格式: call:{pluginId}:{method}"
+    },
+    "configSchema": {
+      "type": "object",
+      "additionalProperties": {
+        "$ref": "#/definitions/ConfigField"
+      },
+      "description": "配置项 Schema 定义"
+    },
+    "files": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "string",
+        "pattern": "^sha256:[a-f0-9]{64}$"
+      },
+      "description": "文件哈希映射，格式: { \"filename\": \"sha256:{hex64}\" }"
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^ed25519:[a-zA-Z0-9_-]+:[A-Za-z0-9+/=]+$",
+      "description": "Ed25519 签名，格式: ed25519:{key_id}:{base64_signature}"
+    }
+  },
+  "definitions": {
+    "ConfigField": {
+      "type": "object",
+      "required": ["type"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["string", "number", "boolean", "select"],
+          "description": "字段类型"
+        },
+        "required": {
+          "type": "boolean",
+          "default": false,
+          "description": "是否必填"
+        },
+        "secret": {
+          "type": "boolean",
+          "default": false,
+          "description": "是否为敏感数据 (存储在 Keychain，运行时通过 context.config 下发，UI 中脱敏显示)"
+        },
+        "label": {
+          "type": "string",
+          "description": "显示标签"
+        },
+        "description": {
+          "type": "string",
+          "description": "字段描述"
+        },
+        "default": {
+          "description": "默认值 (类型应与 type 一致)"
+        },
+        "min": {
+          "type": "number",
+          "description": "最小值 (type=number 时有效)"
+        },
+        "max": {
+          "type": "number",
+          "description": "最大值 (type=number 时有效)"
+        },
+        "options": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["value", "label"],
+            "properties": {
+              "value": { "type": "string" },
+              "label": { "type": "string" }
+            }
+          },
+          "minItems": 1,
+          "description": "选项列表 (type=select 时必填)"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "type": { "const": "select" } }
+          },
+          "then": {
+            "required": ["options"]
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "number" } }
+          },
+          "then": {
+            "properties": {
+              "default": { "type": "number" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "boolean" } }
+          },
+          "then": {
+            "properties": {
+              "default": { "type": "boolean" }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": { "type": { "const": "string" } }
+          },
+          "then": {
+            "properties": {
+              "default": { "type": "string" }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "pluginType": { "enum": ["data", "hybrid"] } }
+      },
+      "then": {
+        "required": ["dataType"]
+      }
+    }
+  ]
+}

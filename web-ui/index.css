@@ -1,0 +1,308 @@
+/* 
+  Apple-Style Design System 
+  Theme: Deep Dark / Glassmorphism / Vibrant Accents
+*/
+
+:root {
+  /* -- Colors: System Grays (Dark Mode) -- */
+  --color-bg: #000000;
+  --color-surface: rgba(28, 28, 30, 0.6);
+  --color-surface-hover: rgba(44, 44, 46, 0.7);
+  --color-text-primary: #FFFFFF;
+  --color-text-secondary: #8E8E93;
+  --color-text-tertiary: #48484A;
+
+  /* -- Colors: Accents -- */
+  --color-accent-blue: #0A84FF;
+  --color-accent-green: #30D158;
+  --color-accent-orange: #FF9F0A;
+  --color-accent-red: #FF453A;
+  --color-accent-purple: #BF5AF2;
+
+  /* -- Effects -- */
+  --glass-blur: blur(20px);
+  --border-glass: 1px solid rgba(255, 255, 255, 0.1);
+  --shadow-sm: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 8px 15px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 20px 40px rgba(0, 0, 0, 0.4);
+
+  /* -- Spacing & Radius -- */
+  --app-padding: 24px;
+  --card-radius: 20px;
+  --btn-radius: 12px;
+
+  /* -- Fonts -- */
+  --font-stack: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+/* Base Reset */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  font-family: var(--font-stack);
+  background: #1e1e1e;
+  /* Background behind the window */
+  color: var(--color-text-primary);
+  font-size: 13px;
+  line-height: 1.4;
+  height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  background-image: radial-gradient(circle at top left, #2a2a2a 0%, #000000 100%);
+}
+
+/* App Window Shell */
+.app-window {
+  width: 960px;
+  height: 640px;
+  background: rgba(30, 30, 30, 0.6);
+  backdrop-filter: blur(40px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 16px;
+  /* macOS window radius */
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 0 40px 80px rgba(0, 0, 0, 0.6);
+  display: flex;
+  overflow: hidden;
+  position: relative;
+}
+
+/* Sidebar */
+.app-sidebar {
+  width: 240px;
+  background: rgba(35, 35, 35, 0.4);
+  border-right: 1px solid rgba(255, 255, 255, 0.05);
+  display: flex;
+  flex-direction: column;
+  padding: 20px 16px;
+}
+
+.window-controls {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 32px;
+  padding-left: 4px;
+}
+
+.control-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+}
+
+.dot-red {
+  background: #FF5F57;
+  border: 0.5px solid rgba(0, 0, 0, 0.2);
+}
+
+.dot-yellow {
+  background: #FEBC2E;
+  border: 0.5px solid rgba(0, 0, 0, 0.2);
+}
+
+.dot-green {
+  background: #28C840;
+  border: 0.5px solid rgba(0, 0, 0, 0.2);
+}
+
+.nav-group {
+  margin-bottom: 24px;
+}
+
+.nav-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  margin-bottom: 8px;
+  padding-left: 10px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.nav-item:hover {
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--color-text-primary);
+}
+
+.nav-item.active {
+  background: rgba(10, 132, 255, 0.15);
+  color: var(--color-accent-blue);
+}
+
+/* Main Content Area */
+.app-content {
+  flex: 1;
+  padding: 32px;
+  overflow-y: auto;
+  position: relative;
+}
+
+/* Views (Tabs) */
+.view-container {
+  display: none;
+  animation: fadeIn 0.3s ease;
+}
+
+.view-container.active {
+  display: block;
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.view-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.view-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+}
+
+/* Components */
+.bento-grid-lg {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, 200px);
+  gap: 16px;
+}
+
+.card-lg {
+  background: rgba(44, 44, 46, 0.4);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 20px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  transition: transform 0.2s, background 0.2s;
+}
+
+.card-lg:hover {
+  background: rgba(54, 54, 56, 0.5);
+  transform: translateY(-2px);
+  box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+}
+
+/* Span utilities */
+.span-2 {
+  grid-column: span 2;
+}
+
+.span-3 {
+  grid-column: span 3;
+}
+
+.row-span-2 {
+  grid-row: span 2;
+}
+
+/* Text Utils */
+.text-label {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.text-hero {
+  font-size: 48px;
+  font-weight: 700;
+  color: var(--color-text-primary);
+  letter-spacing: -0.03em;
+}
+
+.text-sub {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+/* Progress Circles */
+.progress-ring-lg {
+  width: 140px;
+  height: 140px;
+  border-radius: 50%;
+  background: conic-gradient(var(--color-accent-green) 25%, rgba(255, 255, 255, 0.05) 0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  margin: auto;
+}
+
+.progress-ring-lg::before {
+  content: "";
+  position: absolute;
+  width: 120px;
+  height: 120px;
+  background: #232323;
+  border-radius: 50%;
+}
+
+.progress-ring-content {
+  position: relative;
+  text-align: center;
+}
+
+/* Toggle */
+.toggle-switch {
+  width: 44px;
+  height: 24px;
+  background: #3a3a3c;
+  border-radius: 12px;
+  position: relative;
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+.toggle-switch.on {
+  background: var(--color-accent-green);
+}
+
+.toggle-knob {
+  width: 20px;
+  height: 20px;
+  background: white;
+  border-radius: 50%;
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  transition: 0.3s;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+}
+
+.toggle-switch.on .toggle-knob {
+  transform: translateX(20px);
+}

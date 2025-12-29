@@ -1,0 +1,9 @@
+# 密钥目录 (包含私钥，严禁提交!)
+.claude/keys/
+
+# Codex 输出
+.claude/codex-outputs/
+
+# 临时文件
+*.tmp
+*.bak

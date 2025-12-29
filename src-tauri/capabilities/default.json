@@ -1,0 +1,23 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "CUK 默认权限配置",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "core:window:allow-create",
+    "core:window:allow-close",
+    "core:window:allow-show",
+    "core:window:allow-hide",
+    "core:window:allow-set-focus",
+    "core:window:allow-set-position",
+    "core:window:allow-set-size",
+    "core:tray:default",
+    "core:event:default",
+    "store:default",
+    "notification:default",
+    "log:default"
+  ]
+}

@@ -1,0 +1,46 @@
+{
+  "name": "cuk",
+  "version": "0.1.0",
+  "description": "Claude Usage Tracker - macOS 菜单栏应用",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "typecheck": "vue-tsc --noEmit",
+    "lint": "eslint src --ext .vue,.js,.ts,.tsx --fix",
+    "lint:check": "eslint src --ext .vue,.js,.ts,.tsx",
+    "format": "prettier --write \"src/**/*.{vue,ts,js,css}\"",
+    "format:check": "prettier --check \"src/**/*.{vue,ts,js,css}\"",
+    "test": "vitest",
+    "test:run": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "tauri": "tauri",
+    "tauri:dev": "tauri dev",
+    "tauri:build": "tauri build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.9.1",
+    "@tauri-apps/plugin-store": "^2.4.1",
+    "lucide-vue-next": "^0.460.0",
+    "pinia": "^2.3.1",
+    "vue": "^3.5.26",
+    "vue-router": "^4.6.4"
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.39.2",
+    "@tauri-apps/cli": "^2.9.6",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "@vue/test-utils": "^2.4.6",
+    "eslint": "^9.39.2",
+    "eslint-plugin-vue": "^10.6.2",
+    "happy-dom": "^20.0.11",
+    "prettier": "^3.7.4",
+    "typescript": "^5.9.3",
+    "typescript-eslint": "^8.50.1",
+    "vite": "^6.4.1",
+    "vitest": "^2.1.9",
+    "vue-tsc": "^2.2.12"
+  }
+}

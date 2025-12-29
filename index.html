@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>CUK - Claude Usage Tracker</title>
+    <style>
+      /* 禁止用户选择文本（除输入框外） */
+      body {
+        user-select: none;
+        -webkit-user-select: none;
+      }
+      input, textarea {
+        user-select: auto;
+        -webkit-user-select: auto;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
