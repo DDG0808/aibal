@@ -879,7 +879,7 @@ zip -r ../my-plugin-1.0.0.zip .
 
 ### 5. 提交到 Marketplace
 
-联系 AiBal 团队或通过 GitHub 提交 PR 到官方插件仓库。
+通过 GitHub 提交 PR 到官方插件仓库：[aibal-plugins](https://github.com/DDG0808/aibal-plugins)
 
 ---
 
