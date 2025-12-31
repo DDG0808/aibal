@@ -873,7 +873,11 @@ cd my-plugin
 zip -r ../my-plugin-1.0.0.zip .
 ```
 
-### 4. 提交到 Marketplace（敬请期待）
+### 4. 分发插件
+
+将打包好的 ZIP 文件分享给其他用户，用户解压到 `~/.config/aibal/plugins/` 目录即可使用。
+
+### 5. 提交到 Marketplace（敬请期待）
 
 联系 AiBal 团队或通过 GitHub 提交 PR 到官方插件仓库。
 
