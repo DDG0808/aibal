@@ -243,6 +243,8 @@ export interface BalanceData extends PluginDataBase {
   expiresAt?: string;
   /** 多配额子项（如 PAYGO/PLUS/FREE） */
   items?: BalanceItem[];
+  /** 是否显示总额度（默认 false） */
+  showTotal?: boolean;
 }
 
 /**

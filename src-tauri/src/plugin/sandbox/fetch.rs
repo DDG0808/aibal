@@ -15,7 +15,7 @@ use std::collections::HashMap;
 
 use futures::StreamExt;
 use rquickjs::{
-    class::Trace, function::Async, function::Opt, Class, Ctx, FromJs, Function, IntoJs, Object,
+    class::Trace, function::Opt, Class, Ctx, FromJs, Function, IntoJs, Object,
     Result as JsResult, Value,
 };
 
@@ -319,71 +319,94 @@ impl FetchApi {
         // 克隆 manager 用于闭包捕获
         let manager_for_fetch = manager.clone();
 
-        // 注入异步 fetch 函数
-        // Async<Fn> 要求：Fn(params) -> Future<Output = R>，R: IntoJs
-        // 支持 fetch(url) 和 fetch(url, options) 两种调用方式
+        // 注入同步 fetch 函数
+        // 使用新线程 + channel 阻塞执行，避免 Promise 链问题
         globals.set(
             "fetch",
             Function::new(
                 ctx.clone(),
-                Async(move |url: String, options: Opt<FetchOptions>| {
-                    // 克隆 Arc 用于异步任务（每次调用创建新的 clone）
+                move |url: String, options: Opt<FetchOptions>| {
+                    // 克隆 Arc 用于请求
                     let manager = manager_for_fetch.clone();
                     let url_owned = url;
                     let opts = options.0.unwrap_or_default();
 
-                    // 返回 Future，rquickjs 自动包装为 Promise
-                    async move {
-                        // 1. URL 安全检查（在异步任务内执行）
-                        if let Err(e) = UrlSecurityChecker::check_url(&url_owned) {
-                            log::warn!("Fetch API URL 检查失败: {} -> {}", url_owned, e);
-                            // 返回包含错误信息的结果对象（模拟 fetch 失败但不抛异常）
-                            return FetchResultData {
+                    // 1. URL 安全检查（同步）
+                    if let Err(e) = UrlSecurityChecker::check_url(&url_owned) {
+                        log::warn!("Fetch API URL 检查失败: {} -> {}", url_owned, e);
+                        return FetchResultData {
+                            url: url_owned,
+                            method: opts.method.clone().unwrap_or_else(|| "GET".to_string()),
+                            ok: false,
+                            status: 0,
+                            body: format!("URL validation failed: {}", e),
+                        };
+                    }
+
+                    let method = opts.method.clone().unwrap_or_else(|| "GET".to_string());
+                    log::debug!("Fetch API 开始同步请求: {} {}", method, url_owned);
+
+                    // 2. 使用新线程 + channel 同步执行异步 fetch
+                    let (tx, rx) = std::sync::mpsc::channel();
+                    let url_for_thread = url_owned.clone();
+                    let opts_for_thread = opts.clone();
+
+                    std::thread::spawn(move || {
+                        // 在新线程中创建 tokio runtime 执行异步请求
+                        let rt = tokio::runtime::Builder::new_current_thread()
+                            .enable_all()
+                            .build()
+                            .expect("Failed to create tokio runtime");
+
+                        let result = rt.block_on(async {
+                            Self::secure_fetch_with_options(&manager, &url_for_thread, &opts_for_thread).await
+                        });
+
+                        let _ = tx.send(result);
+                    });
+
+                    // 等待结果（30 秒超时）
+                    match rx.recv_timeout(std::time::Duration::from_secs(30)) {
+                        Ok(Ok(result)) => {
+                            log::debug!(
+                                "Fetch API 请求成功: {} -> status {}",
+                                url_owned,
+                                result.status
+                            );
+                            FetchResultData {
+                                url: result.url,
+                                method: result.method,
+                                ok: result.ok,
+                                status: result.status,
+                                body: result.body,
+                            }
+                        }
+                        Ok(Err(e)) => {
+                            log::warn!("Fetch API 请求失败: {} -> {}", url_owned, e);
+                            FetchResultData {
                                 url: url_owned,
-                                method: opts.method.clone().unwrap_or_else(|| "GET".to_string()),
+                                method,
                                 ok: false,
                                 status: 0,
-                                body: format!("URL validation failed: {}", e),
-                            };
-                        }
-
-                        let method = opts.method.clone().unwrap_or_else(|| "GET".to_string());
-                        log::debug!("Fetch API 开始异步请求: {} {}", method, url_owned);
-
-                        // 2. 执行安全的异步 fetch（带 options）
-                        match Self::secure_fetch_with_options(&manager, &url_owned, &opts).await {
-                            Ok(result) => {
-                                log::debug!(
-                                    "Fetch API 请求成功: {} -> status {}",
-                                    url_owned,
-                                    result.status
-                                );
-                                FetchResultData {
-                                    url: result.url,
-                                    method: result.method,
-                                    ok: result.ok,
-                                    status: result.status,
-                                    body: result.body,
-                                }
+                                body: format!("Fetch error: {}", e),
                             }
-                            Err(e) => {
-                                log::warn!("Fetch API 请求失败: {} -> {}", url_owned, e);
-                                // 返回包含错误信息的结果对象
-                                FetchResultData {
-                                    url: url_owned,
-                                    method,
-                                    ok: false,
-                                    status: 0,
-                                    body: format!("Fetch error: {}", e),
-                                }
+                        }
+                        Err(_) => {
+                            log::warn!("Fetch API 请求超时: {}", url_owned);
+                            FetchResultData {
+                                url: url_owned,
+                                method,
+                                ok: false,
+                                status: 0,
+                                body: "Fetch timeout".to_string(),
                             }
                         }
                     }
-                }),
+                },
             )?,
         )?;
 
-        log::debug!("Fetch API 已注入（异步 Promise 模式）");
+        log::debug!("Fetch API 已注入（同步阻塞模式）");
         Ok(())
     }
 

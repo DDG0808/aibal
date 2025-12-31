@@ -12,6 +12,8 @@ import type {
   PluginInfo,
   PluginData,
   UsageData,
+  BalanceData,
+  BalanceItem,
   PluginHealth,
   HealthStatus,
   UsageDimension,
@@ -39,15 +41,6 @@ async function safeListen<T>(event: string, handler: (event: { payload: T }) => 
   return listen<T>(event, handler);
 }
 
-async function safeEmit(event: string, payload?: unknown): Promise<void> {
-  if (!isTauri) {
-    console.info(`[Mock] emit('${event}')`, payload);
-    return;
-  }
-  const { getCurrentWindow } = await import('@tauri-apps/api/window');
-  const currentWindow = getCurrentWindow();
-  await currentWindow.emit(event, payload);
-}
 
 // 模拟数据（开发调试用）
 function getMockResult(cmd: string): unknown {
@@ -90,6 +83,9 @@ function getMockResult(cmd: string): unknown {
 interface QuotaItem {
   name: string;
   percentage: number;
+  used?: number;
+  total?: number;
+  currency?: string;
   status: 'available' | 'error' | 'warning';
   resetLabel?: string;
 }
@@ -138,11 +134,6 @@ const systemStatus = computed<HealthStatus>(() => {
   return 'healthy';
 });
 
-// 健康插件数量
-const healthyPluginCount = computed(() => {
-  return pluginHealth.value.filter(h => h.status === 'healthy').length;
-});
-
 // 已启用且有数据类型的插件列表（与仪表盘一致）
 const enabledDataPlugins = computed(() => {
   return plugins.value.filter(p => p.enabled && p.dataType);
@@ -156,13 +147,13 @@ const selectedPlugin = computed(() => {
   return enabledDataPlugins.value.find(p => p.id === selectedPluginId.value) || enabledDataPlugins.value[0];
 });
 
-// 当前插件的使用量数据
-const currentUsageData = computed<UsageData | null>(() => {
+// 当前插件的数据（支持 usage 和 balance 类型）
+const currentPluginData = computed<PluginData | null>(() => {
   if (!selectedPlugin.value) return null;
   const data = pluginData.value.find(
-    d => d.pluginId === selectedPlugin.value!.id && d.dataType === 'usage'
+    d => d.pluginId === selectedPlugin.value!.id
   );
-  return data as UsageData | null;
+  return data || null;
 });
 
 // 获取插件健康状态
@@ -171,92 +162,119 @@ const getPluginHealthStatus = (pluginId: string): HealthStatus => {
   return health?.status || 'healthy';
 };
 
+// 计算重置时间标签
+const formatResetLabel = (resetTime?: string): string | undefined => {
+  if (!resetTime) return undefined;
+  try {
+    const resetDate = new Date(resetTime);
+    const now = new Date();
+    const diffMs = resetDate.getTime() - now.getTime();
+    if (diffMs > 0) {
+      const minutes = Math.floor(diffMs / (1000 * 60));
+      if (minutes < 60) {
+        return `${minutes}分钟后重置`;
+      } else {
+        const hours = Math.floor(minutes / 60);
+        return `${hours}小时后重置`;
+      }
+    }
+  } catch {
+    // 忽略解析错误
+  }
+  return undefined;
+};
+
+// 根据百分比确定状态
+const getStatusFromPercentage = (percentage: number, pluginHealthy: boolean): 'available' | 'error' | 'warning' => {
+  if (!pluginHealthy) return 'error';
+  if (percentage >= 90) return 'error';
+  if (percentage >= 75) return 'warning';
+  return 'available';
+};
+
 // 将 UsageDimension 转换为 QuotaItem
 const dimensionToQuotaItem = (dim: UsageDimension, pluginHealthy: boolean): QuotaItem => {
-  // 计算重置时间标签
-  let resetLabel: string | undefined;
-  if (dim.resetTime) {
-    try {
-      const resetDate = new Date(dim.resetTime);
-      const now = new Date();
-      const diffMs = resetDate.getTime() - now.getTime();
-      if (diffMs > 0) {
-        const minutes = Math.floor(diffMs / (1000 * 60));
-        if (minutes < 60) {
-          resetLabel = `${minutes}分钟后重置`;
-        } else {
-          const hours = Math.floor(minutes / 60);
-          resetLabel = `${hours}小时后重置`;
-        }
-      }
-    } catch {
-      // 忽略解析错误
-    }
-  }
-
-  // 确定状态
-  let status: 'available' | 'error' | 'warning' = 'available';
-  if (!pluginHealthy) {
-    status = 'error';
-  } else if (dim.percentage >= 90) {
-    status = 'error';
-  } else if (dim.percentage >= 75) {
-    status = 'warning';
-  }
-
   return {
     name: dim.label,
     percentage: dim.percentage,
-    status,
-    resetLabel,
+    used: dim.used,
+    total: dim.limit,
+    status: getStatusFromPercentage(dim.percentage, pluginHealthy),
+    resetLabel: formatResetLabel(dim.resetTime),
   };
 };
 
-// 当前插件的配额列表
+// 将 BalanceItem 转换为 QuotaItem
+const balanceItemToQuotaItem = (item: BalanceItem, pluginHealthy: boolean): QuotaItem => {
+  return {
+    name: item.name,
+    percentage: item.percentage,
+    used: item.used,
+    total: item.quota,
+    currency: item.currency,
+    status: getStatusFromPercentage(item.percentage, pluginHealthy),
+    resetLabel: item.resetLabel || formatResetLabel(item.resetTime),
+  };
+};
+
+// 当前插件的配额列表（支持 usage 和 balance 类型）
 const currentQuotas = computed<QuotaItem[]>(() => {
-  const usageData = currentUsageData.value;
-  if (!usageData) return [];
-
-  const pluginHealthy = getPluginHealthStatus(usageData.pluginId) === 'healthy';
-
-  // 如果有 dimensions，使用 dimensions
-  if (usageData.dimensions && usageData.dimensions.length > 0) {
-    return usageData.dimensions.map(dim => dimensionToQuotaItem(dim, pluginHealthy));
+  const data = currentPluginData.value;
+  if (!data) {
+    console.log('[HomeView] currentQuotas: no data');
+    return [];
   }
 
-  // 否则使用顶层数据创建单个配额项
-  let resetLabel: string | undefined;
-  if (usageData.resetLabel) {
-    resetLabel = usageData.resetLabel;
-  } else if (usageData.resetTime) {
-    try {
-      const resetDate = new Date(usageData.resetTime);
-      const now = new Date();
-      const diffMs = resetDate.getTime() - now.getTime();
-      if (diffMs > 0) {
-        const minutes = Math.floor(diffMs / (1000 * 60));
-        if (minutes < 60) {
-          resetLabel = `${minutes}分钟后重置`;
-        } else {
-          const hours = Math.floor(minutes / 60);
-          resetLabel = `${hours}小时后重置`;
-        }
-      }
-    } catch {
-      // 忽略解析错误
+  console.log('[HomeView] currentQuotas: data=', JSON.stringify(data, null, 2));
+
+  const pluginHealthy = getPluginHealthStatus(data.pluginId) === 'healthy';
+
+  // 处理 usage 类型
+  if (data.dataType === 'usage') {
+    const usageData = data as UsageData;
+    // 如果有 dimensions，使用 dimensions
+    if (usageData.dimensions && usageData.dimensions.length > 0) {
+      return usageData.dimensions.map(dim => dimensionToQuotaItem(dim, pluginHealthy));
     }
+    // 否则使用顶层数据创建单个配额项
+    return [{
+      name: selectedPlugin.value?.name || '使用量',
+      percentage: usageData.percentage,
+      used: usageData.used,
+      total: usageData.limit,
+      status: getStatusFromPercentage(usageData.percentage, pluginHealthy),
+      resetLabel: usageData.resetLabel || formatResetLabel(usageData.resetTime),
+    }];
   }
 
-  return [{
-    name: selectedPlugin.value?.name || '使用量',
-    percentage: usageData.percentage,
-    status: pluginHealthy ? (usageData.percentage >= 90 ? 'error' : usageData.percentage >= 75 ? 'warning' : 'available') : 'error',
-    resetLabel,
-  }];
+  // 处理 balance 类型
+  if (data.dataType === 'balance') {
+    const balanceData = data as BalanceData;
+    // 如果有 items，使用 items
+    if (balanceData.items && balanceData.items.length > 0) {
+      return balanceData.items.map(item => balanceItemToQuotaItem(item, pluginHealthy));
+    }
+    // 否则使用顶层数据创建单个配额项
+    const percentage = balanceData.quota
+      ? Math.round(((balanceData.usedQuota || 0) / balanceData.quota) * 100)
+      : 0;
+    return [{
+      name: selectedPlugin.value?.name || '余额',
+      percentage,
+      used: balanceData.usedQuota,
+      total: balanceData.quota,
+      currency: balanceData.currency,
+      status: getStatusFromPercentage(percentage, pluginHealthy),
+      resetLabel: formatResetLabel(balanceData.expiresAt),
+    }];
+  }
+
+  return [];
 });
 
 // 加载数据
 const loadData = async (force = false) => {
+  console.log('[HomeView] loadData 开始, force=', force);
   try {
     // 使用 refresh_all 而非 get_all_data，确保实际执行插件 fetchData 并返回数据
     const [pluginListResult, allDataResult, allHealthResult] = await Promise.all([
@@ -264,21 +282,39 @@ const loadData = async (force = false) => {
       safeInvoke<Result<PluginData[]>>('refresh_all', { force }),
       safeInvoke<Result<PluginHealth[]>>('get_all_health'),
     ]);
+    console.log('[HomeView] loadData 结果: plugins=', pluginListResult.data?.length, 'data=', allDataResult.data?.length, 'health=', allHealthResult.data?.length);
 
     if (pluginListResult.success && pluginListResult.data) {
       plugins.value = pluginListResult.data;
-      // 默认选中第一个启用的 usage 插件（如果 store 中还没有选中的）
-      if (!pluginStore.selectedPluginId) {
-        const firstEnabled = plugins.value.find(p => p.enabled && p.dataType);
-        if (firstEnabled) {
-          pluginStore.selectPlugin(firstEnabled.id);
-        }
+      // 调试：打印所有插件状态
+      console.log('[HomeView] 插件列表:', plugins.value.map(p => ({
+        id: p.id,
+        enabled: p.enabled,
+        dataType: p.dataType
+      })));
+      // 检查当前选中的插件是否仍然可用
+      const currentSelection = pluginStore.selectedPluginId;
+      const enabledList = plugins.value.filter(p => p.enabled && p.dataType);
+      console.log('[HomeView] 启用的数据插件:', enabledList.map(p => p.id));
+      console.log('[HomeView] 当前选中:', currentSelection);
+
+      const isCurrentValid = currentSelection && enabledList.some(p => p.id === currentSelection);
+      const firstEnabled = enabledList[0];
+      if (!isCurrentValid && firstEnabled) {
+        // 当前选中的插件不可用，切换到第一个可用插件
+        console.log('[HomeView] 当前选中插件不可用，切换到:', firstEnabled.id);
+        pluginStore.selectPlugin(firstEnabled.id);
       }
     }
 
     if (allDataResult.success && allDataResult.data) {
       pluginData.value = allDataResult.data;
+      console.log('[HomeView] 插件数据:', pluginData.value.map(d => d.pluginId));
     }
+
+    // 调试：打印最终状态
+    console.log('[HomeView] 最终状态 - selectedPluginId:', pluginStore.selectedPluginId);
+    console.log('[HomeView] 最终状态 - enabledDataPlugins:', plugins.value.filter(p => p.enabled && p.dataType).map(p => p.id));
 
     if (allHealthResult.success && allHealthResult.data) {
       pluginHealth.value = allHealthResult.data;
@@ -297,6 +333,11 @@ const handleRefresh = async () => {
 
   isRefreshing.value = true;
   try {
+    // 先从后端获取最新的插件列表（因为 Pinia store 在不同窗口是独立实例）
+    await pluginStore.fetchPlugins();
+    // 同步到本地状态
+    plugins.value = pluginStore.plugins;
+    // 然后刷新数据
     await loadData(true);
   } catch (e) {
     console.error('刷新失败:', e);
@@ -311,17 +352,47 @@ const handleSelectPlugin = (pluginId: string) => {
   pluginStore.selectPlugin(pluginId);
 };
 
-// 管理插件
+// 管理插件 - 打开主应用的插件页面
 const handleManagePlugins = async () => {
   try {
-    await safeEmit('open-settings', { tab: 'plugins' });
+    await safeInvoke('open_dashboard', { route: '/plugins' });
   } catch (e) {
     console.error('打开插件管理失败:', e);
   }
 };
 
+// 初始化数据（通过 pluginStore 恢复持久化状态）
+const initData = async () => {
+  // 使用 pluginStore.init() 恢复持久化的启用状态和配置
+  await pluginStore.init();
+  // 同步 store 数据到本地状态
+  plugins.value = pluginStore.plugins;
+  // 获取所有数据
+  await loadData();
+};
+
 // 监听事件
 const setupEventListeners = async () => {
+  // 监听插件系统就绪事件（后端初始化完成后发送）
+  const unlistenPluginsReady = await safeListen<number>(
+    'ipc:plugins_ready',
+    async () => {
+      console.log('[HomeView] 收到插件就绪事件，重新初始化');
+      await initData();
+    }
+  );
+  unlisteners.push(unlistenPluginsReady);
+
+  // 监听托盘刷新事件
+  const unlistenTrayRefresh = await safeListen<void>(
+    'tray:refresh',
+    async () => {
+      console.log('[HomeView] 收到托盘刷新事件');
+      await handleRefresh();
+    }
+  );
+  unlisteners.push(unlistenTrayRefresh);
+
   // 监听插件数据更新
   const unlistenDataUpdated = await safeListen<{ id: string; data: PluginData }>(
     'ipc:plugin_data_updated',
@@ -354,20 +425,46 @@ const setupEventListeners = async () => {
   );
   unlisteners.push(unlistenHealthChanged);
 
-  // 监听窗口失焦事件 - 点击外部时自动隐藏弹窗
+  // 监听插件安装完成事件（重新加载数据）
+  const unlistenPluginInstalled = await safeListen<PluginInfo>(
+    'ipc:plugin_installed',
+    async (event) => {
+      console.log('[HomeView] 收到插件安装事件:', event.payload.id);
+      // 重新加载插件列表和数据
+      await initData();
+    }
+  );
+  unlisteners.push(unlistenPluginInstalled);
+
+  // 监听插件更新完成事件（重新加载数据）
+  const unlistenPluginUpdated = await safeListen<PluginInfo>(
+    'ipc:plugin_updated',
+    async (event) => {
+      console.log('[HomeView] 收到插件更新事件:', event.payload.id);
+      // 重新加载插件列表和数据
+      await initData();
+    }
+  );
+  unlisteners.push(unlistenPluginUpdated);
+
+  // 监听窗口焦点变化事件
   if (isTauri) {
     try {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
       const currentWindow = getCurrentWindow();
-      const unlistenBlur = await currentWindow.onFocusChanged(({ payload: focused }) => {
+      const unlistenBlur = await currentWindow.onFocusChanged(async ({ payload: focused }) => {
         if (!focused) {
           // 窗口失去焦点时隐藏
           currentWindow.hide();
+        } else {
+          // 窗口获得焦点时刷新数据（确保与其他窗口同步）
+          console.log('[HomeView] 窗口获得焦点，刷新数据');
+          await loadData();
         }
       });
       unlisteners.push(unlistenBlur);
     } catch (e) {
-      console.warn('设置窗口失焦监听失败:', e);
+      console.warn('设置窗口焦点监听失败:', e);
     }
   }
 };
@@ -382,18 +479,52 @@ watch(enabledDataPlugins, (newPlugins) => {
 
 // 插件选择监听器清理函数
 let unlistenPluginSelection: (() => void) | null = null;
+// 插件禁用监听器清理函数
+let unlistenPluginDisabled: (() => void) | null = null;
+// 插件启用监听器清理函数
+let unlistenPluginEnabled: (() => void) | null = null;
 
 // 生命周期
 onMounted(async () => {
+  console.log('[HomeView] onMounted 开始');
+
   // 设置透明背景以支持圆角窗口
   document.body.style.background = 'transparent';
   document.documentElement.style.background = 'transparent';
 
-  await loadData();
+  // 先设置事件监听（避免错过后端早期发送的事件）
   await setupEventListeners();
+  console.log('[HomeView] setupEventListeners 完成');
 
   // 监听跨窗口的插件选择事件（与仪表盘同步）
   unlistenPluginSelection = await pluginStore.setupPluginSelectionListener();
+
+  // 监听插件禁用事件（当其他窗口禁用插件时同步本地状态）
+  unlistenPluginDisabled = await pluginStore.setupPluginDisabledListener(async (disabledPluginId) => {
+    console.log('[HomeView] 收到插件禁用事件:', disabledPluginId);
+    // 从后端重新获取插件列表（因为 Pinia store 在不同窗口是独立实例）
+    await pluginStore.fetchPlugins();
+    // 同步到本地状态
+    plugins.value = pluginStore.plugins;
+    // 重新加载数据
+    await loadData();
+  });
+
+  // 监听插件启用事件（当其他窗口启用插件时同步本地状态）
+  unlistenPluginEnabled = await pluginStore.setupPluginEnabledListener(async (enabledPluginId) => {
+    console.log('[HomeView] 收到插件启用事件:', enabledPluginId);
+    // 从后端重新获取插件列表
+    await pluginStore.fetchPlugins();
+    // 同步到本地状态
+    plugins.value = pluginStore.plugins;
+    // 刷新数据
+    await loadData();
+  });
+
+  // 初始化数据（通过 pluginStore 恢复持久化状态）
+  console.log('[HomeView] 开始 initData');
+  await initData();
+  console.log('[HomeView] initData 完成, plugins=', plugins.value.length, 'pluginData=', pluginData.value.length);
 });
 
 onUnmounted(() => {
@@ -407,6 +538,18 @@ onUnmounted(() => {
   if (unlistenPluginSelection) {
     unlistenPluginSelection();
     unlistenPluginSelection = null;
+  }
+
+  // 清理插件禁用监听
+  if (unlistenPluginDisabled) {
+    unlistenPluginDisabled();
+    unlistenPluginDisabled = null;
+  }
+
+  // 清理插件启用监听
+  if (unlistenPluginEnabled) {
+    unlistenPluginEnabled();
+    unlistenPluginEnabled = null;
   }
 });
 </script>
@@ -464,7 +607,7 @@ onUnmounted(() => {
     <!-- 底部栏：系统状态 + 插件图标 + 管理按钮 -->
     <PluginBar
       :plugins="plugins"
-      :healthy-count="healthyPluginCount"
+      :running-count="enabledDataPlugins.length"
       @manage="handleManagePlugins"
     />
   </div>
@@ -474,7 +617,8 @@ onUnmounted(() => {
 .home-view {
   display: flex;
   flex-direction: column;
-  min-height: 100vh;
+  height: 100vh; /* 固定高度，确保弹窗布局生效 */
+  max-height: 100vh;
   background: var(--color-bg);
   border-radius: 12px;
   overflow: hidden;
@@ -482,6 +626,7 @@ onUnmounted(() => {
 
 .home-content {
   flex: 1;
+  min-height: 0; /* 关键：确保 flexbox 子元素可以滚动 */
   display: flex;
   flex-direction: column;
   padding: 0 var(--spacing-md);

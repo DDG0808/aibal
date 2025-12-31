@@ -36,7 +36,7 @@
     {
       "id": "zhipu-balance",
       "name": "智谱 AI 余额",
-      "description": "查询智谱 AI (BigModel) API 余额和配额使用情况，支持多种限额类型",
+      "description": "查询智谱 AI API 余额和配额使用情况",
       "author": "CUK Official",
       "version": "1.0.4",
       "downloads": 5000,

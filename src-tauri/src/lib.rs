@@ -1,7 +1,7 @@
 // CUK - Claude Usage Tracker
 // macOS 菜单栏应用，用于追踪 Claude AI 使用量
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 mod commands;
 mod plugin;
@@ -54,6 +54,8 @@ pub fn run() {
             // Phase 7.3.4 监控 Commands (2个)
             crate::commands::ipc::get_all_health,
             crate::commands::ipc::get_plugin_health,
+            // Phase 7.3.5 窗口 Commands
+            crate::commands::ipc::open_dashboard,
         ])
         .setup(|app| {
             // 初始化日志
@@ -71,6 +73,7 @@ pub fn run() {
             // Phase 4 修复：调用 init() 启动分发器
             // init() 包含：discover_and_load + start_dispatcher + start_call_dispatcher
             let manager_for_init = plugin_manager.0.clone();
+            let app_handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 match manager_for_init.init().await {
                     Ok(plugins) => {
@@ -78,8 +81,14 @@ pub fn run() {
                             "插件系统初始化完成: {} 个插件, EventBus/Call 分发器已启动",
                             plugins.len()
                         );
-                        for plugin in plugins {
+                        for plugin in &plugins {
                             log::debug!("  - {} v{} ({})", plugin.name, plugin.version, plugin.id);
+                        }
+                        // 通知前端插件系统已就绪
+                        if let Err(e) = app_handle.emit("ipc:plugins_ready", plugins.len()) {
+                            log::warn!("发送插件就绪事件失败: {}", e);
+                        } else {
+                            log::info!("已发送 ipc:plugins_ready 事件 ({} 个插件)", plugins.len());
                         }
                     }
                     Err(e) => {

@@ -320,6 +320,9 @@ pub struct BalanceData {
     /// 兼容插件返回的 limits 字段
     #[serde(skip_serializing_if = "Option::is_none", alias = "limits")]
     pub items: Option<Vec<BalanceItem>>,
+    /// 是否显示总额度（默认 false）
+    #[serde(default)]
+    pub show_total: bool,
 }
 
 /// 状态指示器

@@ -3,15 +3,32 @@
  * 仪表盘视图
  * Phase 8.3: 数据聚合展示、健康状态展示
  */
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, onUnmounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { AppLayout } from '@/components/layout';
 import { IconBolt, IconRefresh } from '@/components/icons';
 import { usePluginStore } from '@/stores';
+import { formatLargeNumber, formatUsedQuota } from '@/utils/format';
 import type { UsageData, BalanceData, StatusData, PluginData } from '@/types';
 
 const pluginStore = usePluginStore();
 const router = useRouter();
+
+// Tauri 环境检测
+const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+// 安全的事件监听
+async function safeListen<T>(event: string, handler: (event: { payload: T }) => void): Promise<() => void> {
+  if (!isTauri) {
+    console.info(`[Mock] listen('${event}')`);
+    return () => {};
+  }
+  const { listen } = await import('@tauri-apps/api/event');
+  return listen<T>(event, handler);
+}
+
+// 事件监听器清理函数
+const unlisteners: (() => void)[] = [];
 
 // 状态
 const isLoading = ref(false);
@@ -32,7 +49,11 @@ const selectedPlugin = computed(() => plugins.value.find(p => p.id === selectedP
 const healthData = computed(() => pluginStore.selectedPluginHealth);
 
 // 当前数据和类型（使用 store 的 computed 确保响应式追踪正确）
-const currentData = computed<PluginData | null>(() => pluginStore.selectedPluginData);
+const currentData = computed<PluginData | null>(() => {
+  const data = pluginStore.selectedPluginData;
+  console.log('[Dashboard] currentData computed:', !!data, data?.dataType);
+  return data;
+});
 const currentDataType = computed(() => currentData.value?.dataType ?? selectedPlugin.value?.dataType);
 
 // 插件下拉框
@@ -44,16 +65,12 @@ function toggleDropdown() {
 
 async function selectPlugin(id: string) {
   showPluginDropdown.value = false;
-  // 如果数据未加载，显示切换加载状态
-  if (!pluginStore.pluginData.has(id)) {
-    isSwitching.value = true;
-    try {
-      await pluginStore.selectPlugin(id);
-    } finally {
-      isSwitching.value = false;
-    }
-  } else {
+  // 每次切换都显示加载状态并执行插件刷新
+  isSwitching.value = true;
+  try {
     await pluginStore.selectPlugin(id);
+  } finally {
+    isSwitching.value = false;
   }
 }
 
@@ -105,8 +122,10 @@ const usageData = computed<UsageData | null>(() => {
 const balanceData = computed<BalanceData | null>(() => {
   const data = currentData.value;
   if (data && data.dataType === 'balance') {
+    console.log('[Dashboard] balanceData computed: has balance data, items:', (data as BalanceData).items?.length);
     return data as BalanceData;
   }
+  console.log('[Dashboard] balanceData computed: null, dataType:', data?.dataType);
   return null;
 });
 
@@ -120,7 +139,23 @@ const statusData = computed<StatusData | null>(() => {
 });
 
 // 是否有数据
-const hasData = computed(() => currentData.value !== null);
+const hasData = computed(() => {
+  const has = currentData.value !== null;
+  console.log('[Dashboard] hasData computed:', has);
+  return has;
+});
+
+// 数据加载状态（智能判断：数据返回或请求完成即停止）
+const isDataLoading = computed(() => {
+  // 手动刷新时，显示加载状态直到完成
+  if (isLoading.value) return true;
+  // 如果 store 不在刷新中，说明请求已完成（成功或失败）
+  if (!pluginStore.isRefreshing) return false;
+  // 如果已有数据，停止加载（数据返回即停止）
+  if (hasData.value) return false;
+  // 初始化期间且 store 还在刷新
+  return isInitializing.value;
+});
 
 // 进度条颜色
 const progressColor = computed(() => {
@@ -234,35 +269,15 @@ function getItemProgressColor(percentage: number): string {
   return 'var(--color-accent-green)';
 }
 
-// 格式化大数字（智能单位转换）
-function formatLargeNumber(n: number): string {
-  if (n === 0) return '0';
-  const absN = Math.abs(n);
-  if (absN >= 1_000_000_000) {
-    const val = n / 1_000_000_000;
-    return val % 1 === 0 ? `${val}B` : `${val.toFixed(1)}B`;
-  }
-  if (absN >= 1_000_000) {
-    const val = n / 1_000_000;
-    return val % 1 === 0 ? `${val}M` : `${val.toFixed(1)}M`;
-  }
-  if (absN >= 10_000) {
-    const val = n / 1_000;
-    return val % 1 === 0 ? `${val}K` : `${val.toFixed(1)}K`;
-  }
-  // 小数字保留精度
-  if (n === Math.floor(n)) return n.toString();
-  return n.toFixed(n < 10 ? 3 : 2);
-}
-
-// 格式化 item 已用量显示
-function formatItemUsed(item: { used: number; quota: number; currency?: string }): string {
-  const currency = item.currency || '%';
-  // 按量付费模式（quota 为 0）只显示剩余
+// 格式化 item 已用量显示（显示"已用 X/Y"）
+function formatItemUsed(item: { used: number; quota: number; percentage: number; currency?: string }): string {
+  // 按量付费模式（quota 为 0）显示已用金额
   if (!item.quota || item.quota === 0) {
-    return `剩余 ${formatLargeNumber(item.used)} ${currency}`;
+    const currency = item.currency || '$';
+    return `已用 ${formatLargeNumber(item.used)} ${currency}`;
   }
-  return `${formatLargeNumber(item.used)} / ${formatLargeNumber(item.quota)} ${currency}`;
+  // 有配额时显示"已用 X/Y"
+  return formatUsedQuota(item.used, item.quota);
 }
 
 // 格式化 item 重置/到期信息
@@ -315,23 +330,96 @@ function goToPluginConfig() {
 // 初始化状态
 const isInitializing = ref(true);
 
-// 初始化
-onMounted(async () => {
-  isInitializing.value = true;
-  try {
-    // init 会恢复持久化的选择并按需加载数据
-    await pluginStore.init();
-    // 如果 store 中没有选中插件，选择第一个有数据类型的插件
-    if (!pluginStore.selectedPluginId) {
-      const firstPlugin = plugins.value[0];
-      if (firstPlugin) {
-        await pluginStore.selectPlugin(firstPlugin.id);
+// 设置事件监听
+async function setupEventListeners(): Promise<void> {
+  // 监听插件系统就绪事件（后端初始化完成后发送）
+  const unlistenPluginsReady = await safeListen<number>(
+    'ipc:plugins_ready',
+    async () => {
+      console.log('[DashboardView] 收到插件就绪事件，重新初始化');
+      await pluginStore.init();
+      if (pluginStore.selectedPluginId) {
+        await pluginStore.refreshPlugin(pluginStore.selectedPluginId, true);
       }
     }
+  );
+  unlisteners.push(unlistenPluginsReady);
+
+  // 监听托盘刷新事件
+  const unlistenTrayRefresh = await safeListen<void>(
+    'tray:refresh',
+    async () => {
+      console.log('[DashboardView] 收到托盘刷新事件');
+      await refreshData();
+    }
+  );
+  unlisteners.push(unlistenTrayRefresh);
+
+  // 监听插件禁用事件（其他窗口禁用插件时同步状态）
+  const unlistenPluginDisabled = await pluginStore.setupPluginDisabledListener(async (disabledPluginId) => {
+    console.log('[DashboardView] 收到插件禁用事件:', disabledPluginId);
+    // 关闭下拉菜单（如果正在显示）
+    showPluginDropdown.value = false;
+    // 从后端重新获取插件列表（因为 Pinia store 在不同窗口是独立实例）
+    await pluginStore.fetchPlugins();
+    await pluginStore.fetchAllData();
+  });
+  unlisteners.push(unlistenPluginDisabled);
+
+  // 监听插件启用事件（其他窗口启用插件时同步状态）
+  const unlistenPluginEnabled = await pluginStore.setupPluginEnabledListener(async (enabledPluginId) => {
+    console.log('[DashboardView] 收到插件启用事件:', enabledPluginId);
+    // 从后端重新获取插件列表和数据
+    await pluginStore.fetchPlugins();
+    await pluginStore.fetchAllData();
+  });
+  unlisteners.push(unlistenPluginEnabled);
+}
+
+// 初始化（带超时保护）
+onMounted(async () => {
+  // 先设置事件监听（避免错过后端早期发送的事件）
+  await setupEventListeners();
+
+  isInitializing.value = true;
+
+  // 超时保护：最多等待 10 秒
+  const timeout = new Promise<void>((_, reject) =>
+    setTimeout(() => reject(new Error('初始化超时')), 10000)
+  );
+
+  try {
+    await Promise.race([
+      (async () => {
+        // init 会恢复持久化的选择并加载所有插件数据
+        await pluginStore.init();
+        // 如果 store 中没有选中插件，选择第一个有数据类型的插件
+        if (!pluginStore.selectedPluginId) {
+          const firstPlugin = plugins.value[0];
+          if (firstPlugin) {
+            await pluginStore.selectPlugin(firstPlugin.id);
+          }
+        }
+        // init() 已经调用了 fetchAllData()，无需再次刷新
+        // 但如果当前插件数据缺失，单独刷新一次
+        if (pluginStore.selectedPluginId && !pluginStore.pluginData.has(pluginStore.selectedPluginId)) {
+          console.log('[DashboardView] 当前插件数据缺失，单独刷新:', pluginStore.selectedPluginId);
+          await pluginStore.refreshPlugin(pluginStore.selectedPluginId, true);
+        }
+      })(),
+      timeout,
+    ]);
+  } catch (e) {
+    console.error('[DashboardView] 初始化失败:', e);
   } finally {
     isInitializing.value = false;
   }
   // 若无插件，selectedPluginId 保持空，UI 会显示空状态
+});
+
+onUnmounted(() => {
+  // 清理事件监听器
+  unlisteners.forEach(unlisten => unlisten());
 });
 </script>
 
@@ -342,14 +430,8 @@ onMounted(async () => {
     </template>
 
     <div class="dashboard">
-      <!-- 初始化加载状态 -->
-      <div v-if="isInitializing" class="init-loading">
-        <div class="init-spinner"></div>
-        <span class="init-text">正在加载...</span>
-      </div>
-
-      <!-- 空状态 -->
-      <div v-else-if="!hasPlugins" class="empty-state">
+      <!-- 空状态（初始化完成且无插件时显示） -->
+      <div v-if="!isInitializing && !hasPlugins" class="empty-state">
         <!-- 背景装饰 -->
         <div class="empty-bg-decoration">
           <div class="decoration-circle decoration-circle-1"></div>
@@ -473,7 +555,7 @@ onMounted(async () => {
         </button>
       </div>
 
-      <!-- 主插件卡片（有插件时） -->
+      <!-- 主插件卡片（初始化中或有插件时显示） -->
       <div v-else class="plugin-card">
         <!-- 切换加载蒙层 -->
         <div v-if="isSwitching" class="switching-overlay">
@@ -491,7 +573,7 @@ onMounted(async () => {
             </div>
             <div class="plugin-meta">
               <div class="plugin-name-row" @click="toggleDropdown">
-                <span class="plugin-name">{{ selectedPlugin?.name }}</span>
+                <span class="plugin-name">{{ selectedPlugin?.name || '加载中...' }}</span>
                 <svg
                   v-if="plugins.length > 1"
                   class="dropdown-icon"
@@ -567,16 +649,23 @@ onMounted(async () => {
           </button>
         </div>
 
-        <!-- 无数据状态 -->
-        <div v-if="!hasData" class="no-data-state">
-          <div class="no-data-icon">⚙️</div>
-          <h4>需要配置插件</h4>
-          <p>请先配置插件的 API 密钥等参数</p>
-          <button class="config-btn" @click="goToPluginConfig">前往配置</button>
-        </div>
+        <!-- 数据展示区域（支持局部刷新） -->
+        <div class="data-section" :class="{ refreshing: isDataLoading }">
+          <!-- 局部刷新蒙层（有数据后自动隐藏） -->
+          <div v-if="isDataLoading" class="refresh-overlay">
+            <div class="refresh-spinner"></div>
+          </div>
 
-        <!-- Usage 类型展示 -->
-        <template v-else-if="currentDataType === 'usage' && usageData">
+          <!-- 无数据状态（仅在初始化完成后显示） -->
+          <div v-if="!isInitializing && !hasData" class="no-data-state">
+            <div class="no-data-icon">⚙️</div>
+            <h4>需要配置插件</h4>
+            <p>请先配置插件的 API 密钥等参数</p>
+            <button class="config-btn" @click="goToPluginConfig">前往配置</button>
+          </div>
+
+          <!-- Usage 类型展示 -->
+          <template v-else-if="currentDataType === 'usage' && usageData">
           <div class="usage-main">
             <div class="usage-stats">
               <span class="usage-label">当前使用量</span>
@@ -590,7 +679,7 @@ onMounted(async () => {
                 {{ usageData.resetLabel || '--' }}
               </div>
               <div class="usage-detail">
-                已用 {{ usageData.used }} / {{ usageData.limit }} {{ usageData.unit }}
+                {{ formatUsedQuota(usageData.used ?? 0, usageData.limit ?? 0) }} {{ usageData.unit }}
               </div>
             </div>
           </div>
@@ -620,7 +709,7 @@ onMounted(async () => {
                   <div class="dimension-progress-fill" :style="{ width: dim.percentage + '%', background: dim.percentage >= 75 ? 'var(--color-accent)' : 'var(--color-accent-green)' }" />
                 </div>
                 <div class="dimension-meta">
-                  <span>{{ dim.used }}/{{ dim.limit }}</span>
+                  <span>{{ formatLargeNumber(dim.used ?? 0) }}/{{ formatLargeNumber(dim.limit ?? 0) }}</span>
                   <span>{{ formatResetTime(dim.resetTime) }}</span>
                 </div>
               </div>
@@ -630,8 +719,8 @@ onMounted(async () => {
 
         <!-- Balance 类型展示 -->
         <template v-else-if="currentDataType === 'balance' && balanceData">
-          <!-- 主余额显示（仅当有 balance 值时） -->
-          <div v-if="balanceData.balance > 0" class="balance-main">
+          <!-- 主余额显示（仅当 showTotal=true 且有 balance 值时） -->
+          <div v-if="balanceData.showTotal && balanceData.balance > 0" class="balance-main">
             <div class="balance-stats">
               <span class="balance-label">当前余额</span>
               <div class="balance-value">
@@ -647,13 +736,15 @@ onMounted(async () => {
 
           <!-- 多配额子项网格 -->
           <div v-if="balanceData.items?.length" class="items-grid">
-            <div v-for="item in balanceData.items" :key="item.name" class="item-card">
+            <div v-for="(item, index) in balanceData.items" :key="`${item.name}-${index}`" class="item-card">
               <div class="item-header">
                 <span class="item-name">{{ item.name }}</span>
                 <span v-if="item.refreshable" class="refreshable-badge">可刷新</span>
-                <span class="item-percentage">{{ Math.round(item.percentage) }}%</span>
+                <!-- PAY_PER_USE (quota=0) 不显示百分比；显示剩余百分比 -->
+                <span v-if="item.quota > 0" class="item-percentage">{{ Math.round(100 - item.percentage) }}%</span>
               </div>
-              <div class="item-progress">
+              <!-- PAY_PER_USE (quota=0) 不显示进度条 -->
+              <div v-if="item.quota > 0" class="item-progress">
                 <div
                   class="item-progress-fill"
                   :style="{
@@ -680,7 +771,7 @@ onMounted(async () => {
             </div>
             <div class="quota-info">
               <div class="quota-used">
-                已用 {{ balanceData.usedQuota }} / {{ balanceData.quota }} {{ balanceData.currency }}
+                {{ formatUsedQuota(balanceData.usedQuota ?? 0, balanceData.quota ?? 0) }} {{ balanceData.currency }}
               </div>
               <div class="quota-progress">
                 <div class="quota-progress-fill" :style="{ width: (balanceData.usedQuota / balanceData.quota * 100) + '%', background: balanceColor }" />
@@ -701,6 +792,7 @@ onMounted(async () => {
             </div>
           </div>
         </template>
+        </div><!-- /.data-section -->
 
         <!-- 连接监控 -->
         <div class="monitoring-section">
@@ -721,30 +813,6 @@ onMounted(async () => {
 <style scoped>
 .dashboard {
   max-width: 800px;
-}
-
-/* 初始化加载状态 */
-.init-loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  min-height: 300px;
-  gap: var(--spacing-lg);
-}
-
-.init-spinner {
-  width: 48px;
-  height: 48px;
-  border: 3px solid var(--color-border);
-  border-top-color: var(--color-accent);
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-.init-text {
-  font-size: 0.9375rem;
-  color: var(--color-text-secondary);
 }
 
 /* 空状态 */
@@ -1008,6 +1076,38 @@ onMounted(async () => {
   color: var(--color-text-secondary);
 }
 
+/* 数据展示区域（局部刷新） */
+.data-section {
+  position: relative;
+  min-height: 120px;
+  transition: opacity var(--transition-fast);
+}
+
+.data-section.refreshing {
+  pointer-events: none;
+}
+
+.refresh-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(var(--color-bg-card-rgb, 30, 30, 30), 0.7);
+  backdrop-filter: blur(2px);
+  border-radius: var(--radius-lg);
+  z-index: 10;
+}
+
+.refresh-spinner {
+  width: 28px;
+  height: 28px;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
 .card-header {
   display: flex;
   align-items: flex-start;
@@ -1066,19 +1166,20 @@ onMounted(async () => {
   top: 100%;
   left: -60px;
   min-width: 280px;
-  background: #222;
+  background: var(--color-bg-secondary);
   border-radius: var(--radius-lg);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-lg);
   z-index: 100;
   margin-top: var(--spacing-sm);
   overflow: hidden;
+  border: 1px solid var(--color-border);
 }
 
 .dropdown-label {
   font-size: 0.8125rem;
   color: var(--color-text-tertiary);
   padding: 10px 16px;
-  background: #1a1a1a;
+  background: var(--color-bg-tertiary);
 }
 
 .dropdown-item {
@@ -1088,17 +1189,17 @@ onMounted(async () => {
   padding: 10px 16px;
   cursor: pointer;
   transition: background var(--transition-fast);
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  border-top: 1px solid var(--color-border);
 }
 
 .dropdown-item:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--color-bg-hover);
 }
 
 .dropdown-item-icon {
   width: 36px;
   height: 36px;
-  background: #1a3a2a;
+  background: rgba(34, 197, 94, 0.15);
   border-radius: var(--radius-md);
   display: flex;
   align-items: center;
@@ -1548,6 +1649,8 @@ onMounted(async () => {
   border-radius: var(--radius-sm);
   font-size: 0.6875rem;
   font-weight: 500;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .item-percentage {

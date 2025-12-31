@@ -14,44 +14,33 @@ interface SimplePlugin {
 interface Props {
   /** 插件列表 */
   plugins?: SimplePlugin[];
-  /** 健康插件数量 */
-  healthyCount?: number;
+  /** 启动插件数量 */
+  runningCount?: number;
 }
 
 const props = withDefaults(defineProps<Props>(), {
   plugins: () => [],
-  healthyCount: 0,
+  runningCount: 0,
 });
 
 const emit = defineEmits<{
   (e: 'manage'): void;
 }>();
 
-// 启用的插件
-const enabledPlugins = computed(() =>
-  props.plugins.filter(p => p.enabled !== false)
-);
-
 // 系统状态描述
 const statusDescription = computed(() => {
-  if (enabledPlugins.value.length === 0) {
+  if (props.runningCount === 0) {
     return '暂无插件';
   }
-  return `共 ${props.healthyCount} 个健康插件`;
+  return `共 ${props.runningCount} 个启动插件`;
 });
 
 // 状态颜色
 const statusColor = computed(() => {
-  if (enabledPlugins.value.length === 0) {
+  if (props.runningCount === 0) {
     return 'var(--color-text-tertiary)';
   }
-  if (props.healthyCount === enabledPlugins.value.length) {
-    return 'var(--color-accent-green)';
-  }
-  if (props.healthyCount === 0) {
-    return 'var(--color-accent-red)';
-  }
-  return 'var(--color-accent)';
+  return 'var(--color-accent-green)';
 });
 
 const handleManage = () => {

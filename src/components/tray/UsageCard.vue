@@ -2,14 +2,24 @@
 /**
  * 配额行组件
  * 显示单个模型的配额信息：名称、状态、百分比、进度条
+ * 支持两种模式：
+ * - 按量付费（total=0）：只显示已用金额，无进度条
+ * - 包月（total>0）：显示已用/总量，有进度条
  */
 import { computed } from 'vue';
+import { formatUsedQuota, isPayAsYouGo } from '@/utils/format';
 
 interface QuotaItem {
   /** 模型/维度名称 */
   name: string;
   /** 使用百分比 (0-100) */
   percentage: number;
+  /** 已用额度 */
+  used?: number;
+  /** 总额度 */
+  total?: number;
+  /** 货币符号 */
+  currency?: string;
   /** 状态: available/error/warning */
   status?: 'available' | 'error' | 'warning';
   /** 重置时间描述 */
@@ -54,24 +64,33 @@ const statusConfig = computed(() => {
       return { text: '可用', class: 'status-available' };
   }
 });
+
+// 是否为按量付费模式
+const isPaygo = computed(() => isPayAsYouGo({
+  used: props.item.used ?? 0,
+  total: props.item.total ?? 0,
+}));
 </script>
 
 <template>
   <div class="quota-row">
-    <!-- 头部：名称 + 状态 + 百分比 -->
+    <!-- 头部：名称 + 状态/百分比 -->
     <div class="quota-header">
       <span class="quota-name">{{ item.name }}</span>
       <div class="quota-right">
-        <span
-          class="status-tag"
-          :class="statusConfig.class"
-        >{{ statusConfig.text }}</span>
-        <span class="quota-percentage">{{ Math.round(safePercentage) }}%</span>
+        <!-- 按量付费：不显示状态标签和百分比 -->
+        <template v-if="!isPaygo">
+          <span
+            class="status-tag"
+            :class="statusConfig.class"
+          >{{ statusConfig.text }}</span>
+          <span class="quota-percentage">{{ Math.round(remainingPercentage) }}%</span>
+        </template>
       </div>
     </div>
 
-    <!-- 进度条 -->
-    <div class="progress-bar">
+    <!-- 进度条：仅包月模式显示 -->
+    <div v-if="!isPaygo" class="progress-bar">
       <div
         class="progress-fill"
         :style="{
@@ -83,7 +102,7 @@ const statusConfig = computed(() => {
 
     <!-- 底部信息 -->
     <div class="quota-footer">
-      <span class="remaining-info">剩余 {{ Math.round(remainingPercentage) }}%</span>
+      <span class="remaining-info">{{ formatUsedQuota(item.used ?? 0, item.total ?? 0, item.currency) }}</span>
       <span
         v-if="item.resetLabel"
         class="reset-info"

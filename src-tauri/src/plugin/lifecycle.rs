@@ -1997,18 +1997,36 @@ impl PluginManager {
                                 .and_then(|v| v.as_str())?
                                 .to_string();
 
+                            // 检查 isPayPerUse 标记（提前检查，用于决定字段解析逻辑）
+                            let is_pay_per_use = item.get("isPayPerUse")
+                                .or_else(|| item.get("is_pay_per_use"))
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(false);
+
                             // used 支持 used, currentValue
-                            let used = item.get("used")
-                                .or_else(|| item.get("currentValue"))
-                                .and_then(|v| v.as_f64())
-                                .unwrap_or(0.0);
+                            // 对于 PAY_PER_USE 模式，使用 remaining 作为 used（用于显示"剩余 X"）
+                            let used = if is_pay_per_use {
+                                item.get("remaining")
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(0.0)
+                            } else {
+                                item.get("used")
+                                    .or_else(|| item.get("currentValue"))
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(0.0)
+                            };
 
                             // quota 支持 quota, usage, limit
-                            let quota = item.get("quota")
-                                .or_else(|| item.get("usage"))
-                                .or_else(|| item.get("limit"))
-                                .and_then(|v| v.as_f64())
-                                .unwrap_or(0.0);
+                            // 对于 PAY_PER_USE 模式，quota 设为 0（表示无固定额度）
+                            let quota = if is_pay_per_use {
+                                0.0
+                            } else {
+                                item.get("quota")
+                                    .or_else(|| item.get("usage"))
+                                    .or_else(|| item.get("limit"))
+                                    .and_then(|v| v.as_f64())
+                                    .unwrap_or(0.0)
+                            };
 
                             // resetLabel 支持 resetLabel, statusText
                             let reset_label = item.get("resetLabel")
@@ -2022,6 +2040,12 @@ impl PluginManager {
                                 .and_then(|v| v.as_str())
                                 .map(|s| s.to_string());
 
+                            // refreshable: 优先使用插件返回的值，否则根据 isPayPerUse 判断
+                            // （is_pay_per_use 已在上面检查过）
+                            let refreshable = item.get("refreshable")
+                                .and_then(|v| v.as_bool())
+                                .unwrap_or(!is_pay_per_use);
+
                             Some(BalanceItem {
                                 name,
                                 used,
@@ -2032,11 +2056,14 @@ impl PluginManager {
                                 reset_label,
                                 expires_at: item.get("expiresAt").and_then(|v| v.as_str()).map(|s| s.to_string()),
                                 remaining_days: item.get("remainingDays").and_then(|v| v.as_i64()),
-                                refreshable: item.get("refreshable").and_then(|v| v.as_bool()).unwrap_or(true),
+                                refreshable,
                             })
                         })
                         .collect()
                 });
+
+                // 解析 showTotal 字段（默认 false）
+                let show_total = result.get("showTotal").and_then(|v| v.as_bool()).unwrap_or(false);
 
                 Ok(PluginData::Balance(BalanceData {
                     base,
@@ -2046,6 +2073,7 @@ impl PluginManager {
                     used_quota,
                     expires_at,
                     items,
+                    show_total,
                 }))
             }
             "status" => {

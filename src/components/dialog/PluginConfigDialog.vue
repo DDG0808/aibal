@@ -393,6 +393,7 @@ function getFieldError(key: string): string | undefined {
 
 .dialog-body {
   flex: 1;
+  min-height: 0; /* 关键：确保 flexbox 子元素可以滚动 */
   overflow-y: auto;
   padding: var(--spacing-xl);
   padding-top: var(--spacing-lg);

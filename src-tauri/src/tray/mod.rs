@@ -242,6 +242,12 @@ fn toggle_main_window<R: Runtime>(app: &AppHandle<R>, tray_info: Option<TrayPosi
                 if let Err(e) = window.set_focus() {
                     log::warn!("设置窗口焦点失败: {}", e);
                 }
+                // 发送刷新事件，确保托盘弹框显示最新数据
+                if let Err(e) = app.emit("tray:refresh", ()) {
+                    log::warn!("发送托盘刷新事件失败: {}", e);
+                } else {
+                    log::debug!("托盘弹框显示，触发数据刷新");
+                }
             }
             Err(e) => {
                 log::error!("获取窗口可见性失败: {}", e);

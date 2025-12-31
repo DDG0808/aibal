@@ -130,6 +130,8 @@ export interface BalanceData extends PluginDataBase {
   quota?: number;
   usedQuota?: number;
   expiresAt?: string;
+  /** 是否显示总额度（默认 false） */
+  showTotal?: boolean;
 }
 
 /**

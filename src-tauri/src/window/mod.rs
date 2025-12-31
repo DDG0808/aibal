@@ -14,6 +14,8 @@ use tauri::{AppHandle, Emitter, Manager, Runtime, WebviewWindow};
 pub enum WindowType {
     /// 托盘弹窗 (主面板)
     Popup,
+    /// 仪表盘窗口 (主应用)
+    Dashboard,
     /// 设置窗口
     Settings,
     /// 首次设置向导
@@ -55,6 +57,19 @@ impl WindowType {
                 always_on_top: true,
                 center: false,
                 skip_taskbar: true, // 弹窗不显示在任务栏
+            },
+            WindowType::Dashboard => WindowConfig {
+                label: "dashboard",
+                title: "CUK",
+                url: "/dashboard",
+                width: 900.0,
+                height: 650.0,
+                resizable: true,
+                decorations: true,
+                transparent: false,
+                always_on_top: false,
+                center: true,
+                skip_taskbar: false, // 主窗口显示在任务栏
             },
             WindowType::Settings => WindowConfig {
                 label: "settings",
@@ -199,6 +214,63 @@ impl WindowManager {
             true
         } else {
             false
+        }
+    }
+
+    /// 打开仪表盘窗口并导航到指定路由
+    pub fn open_dashboard_with_route<R: Runtime>(
+        app: &AppHandle<R>,
+        route: Option<&str>,
+    ) -> Option<WebviewWindow<R>> {
+        let config = WindowType::Dashboard.config();
+        let target_route = route.unwrap_or("/dashboard");
+
+        // 检查窗口是否已存在
+        if let Some(window) = app.get_webview_window(config.label) {
+            if let Err(e) = window.show() {
+                log::warn!("显示已有窗口失败: label={}, error={}", config.label, e);
+            }
+            if let Err(e) = window.set_focus() {
+                log::warn!("设置窗口焦点失败: label={}, error={}", config.label, e);
+            }
+            // 向窗口发送导航事件
+            if let Err(e) = window.emit("navigate", target_route) {
+                log::warn!("发送导航事件失败: route={}, error={}", target_route, e);
+            }
+            return Some(window);
+        }
+
+        // 创建新窗口（带初始路由）
+        let url = if target_route != "/dashboard" {
+            target_route
+        } else {
+            config.url
+        };
+
+        let builder = tauri::WebviewWindowBuilder::new(
+            app,
+            config.label,
+            tauri::WebviewUrl::App(url.into()),
+        )
+        .title(config.title)
+        .inner_size(config.width, config.height)
+        .resizable(config.resizable)
+        .decorations(config.decorations)
+        .transparent(config.transparent)
+        .always_on_top(config.always_on_top)
+        .skip_taskbar(config.skip_taskbar)
+        .visible(true)
+        .center();
+
+        match builder.build() {
+            Ok(window) => {
+                log::info!("仪表盘窗口已创建: route={}", url);
+                Some(window)
+            }
+            Err(e) => {
+                log::error!("创建仪表盘窗口失败: {}", e);
+                None
+            }
         }
     }
 }

@@ -298,6 +298,7 @@ pub async fn refresh_all(
         }
     }
 
+    log::info!("[refresh_all] 返回 {} 条数据", data.len());
     Ok(IpcResult::ok(data))
 }
 
@@ -362,4 +363,26 @@ pub async fn get_plugin_health(
 ) -> Result<IpcResult<Option<PluginHealth>>, String> {
     let health = state.0.get_plugin_health(&id).await;
     Ok(IpcResult::ok(health))
+}
+
+// ============================================================================
+// 7.3.5 窗口 Commands
+// ============================================================================
+
+/// 打开仪表盘窗口并导航到指定路由
+#[command]
+pub async fn open_dashboard(
+    app: AppHandle,
+    route: Option<String>,
+) -> Result<IpcResult<()>, String> {
+    use crate::window::WindowManager;
+
+    let route_ref = route.as_deref();
+    match WindowManager::open_dashboard_with_route(&app, route_ref) {
+        Some(_) => Ok(IpcResult::ok(())),
+        None => Ok(IpcResult::err(AppError::new(
+            "WINDOW_OPEN_FAILED",
+            "打开仪表盘窗口失败",
+        ))),
+    }
 }

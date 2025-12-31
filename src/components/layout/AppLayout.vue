@@ -3,11 +3,19 @@
  * 应用主布局组件
  * Phase 8: 包含侧边栏和主内容区
  */
-import { computed } from 'vue';
+import { computed, onMounted, onUnmounted } from 'vue';
+import { useRouter } from 'vue-router';
 import AppSidebar from './AppSidebar.vue';
 import { useAppStore } from '@/stores';
 
 const appStore = useAppStore();
+const router = useRouter();
+
+// Tauri 环境检测
+const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+// 事件监听器清理函数
+let unlistenNavigate: (() => void) | null = null;
 
 // const hasNotifications = ref(true); // 通知按钮暂时隐藏
 
@@ -24,6 +32,34 @@ function toggleTheme() {
     appStore.setTheme(appStore.theme === 'dark' ? 'light' : 'dark');
   }
 }
+
+// 设置导航事件监听
+async function setupNavigateListener() {
+  if (!isTauri) return;
+
+  try {
+    const { listen } = await import('@tauri-apps/api/event');
+    unlistenNavigate = await listen<string>('navigate', (event) => {
+      const route = event.payload;
+      if (route && route !== router.currentRoute.value.path) {
+        router.push(route);
+      }
+    });
+  } catch (e) {
+    console.warn('设置导航监听失败:', e);
+  }
+}
+
+onMounted(() => {
+  setupNavigateListener();
+});
+
+onUnmounted(() => {
+  if (unlistenNavigate) {
+    unlistenNavigate();
+    unlistenNavigate = null;
+  }
+});
 </script>
 
 <template>

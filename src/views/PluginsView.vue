@@ -29,6 +29,9 @@ const configPluginId = ref<string | null>(null);
 const configPluginName = ref('');
 const configSchema = ref<Record<string, ConfigFieldSchema>>({});
 
+// 事件监听器清理函数
+let unlistenPluginDisabled: (() => void) | null = null;
+
 // 从 Store 获取插件列表，并计算健康状态
 const plugins = computed(() => {
   return pluginStore.plugins.map(plugin => {
@@ -164,6 +167,19 @@ onMounted(async () => {
   // 先添加全局点击监听器（避免 await 后组件已卸载导致泄漏）
   document.addEventListener('click', handleClickOutside);
 
+  // 监听插件禁用事件（如果正在配置的插件被禁用，关闭配置弹框）
+  unlistenPluginDisabled = await pluginStore.setupPluginDisabledListener((disabledPluginId) => {
+    console.log('[PluginsView] 收到插件禁用事件:', disabledPluginId);
+    // 如果正在配置被禁用的插件，关闭配置弹框
+    if (showConfigDialog.value && configPluginId.value === disabledPluginId) {
+      closeConfigDialog();
+    }
+    // 关闭操作菜单（如果正在显示被禁用插件的菜单）
+    if (activeMenuId.value === disabledPluginId) {
+      closeMenu();
+    }
+  });
+
   if (pluginStore.plugins.length === 0) {
     await pluginStore.init();
   }
@@ -172,6 +188,11 @@ onMounted(async () => {
 // 清理
 onUnmounted(() => {
   document.removeEventListener('click', handleClickOutside);
+  // 清理插件禁用事件监听器
+  if (unlistenPluginDisabled) {
+    unlistenPluginDisabled();
+    unlistenPluginDisabled = null;
+  }
 });
 
 // 获取状态标签

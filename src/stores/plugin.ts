@@ -14,6 +14,10 @@ const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
 // 插件选择同步事件名称
 const PLUGIN_SELECTED_EVENT = 'window:plugin_selected';
+// 插件禁用事件名称（通知其他窗口和组件）
+const PLUGIN_DISABLED_EVENT = 'window:plugin_disabled';
+// 插件启用事件名称（通知其他窗口和组件）
+const PLUGIN_ENABLED_EVENT = 'window:plugin_enabled';
 
 // 安全的 invoke 调用（浏览器环境返回模拟数据）
 async function safeInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -121,7 +125,11 @@ export const usePluginStore = defineStore('plugin', () => {
   // 当前选中插件的数据（确保响应式追踪正确）
   const selectedPluginData = computed<PluginData | null>(() => {
     if (!selectedPluginId.value) return null;
-    return pluginData.value.get(selectedPluginId.value) ?? null;
+    // 显式读取 pluginData.value 触发响应式追踪
+    const dataMap = pluginData.value;
+    const data = dataMap.get(selectedPluginId.value) ?? null;
+    console.log('[Plugin] selectedPluginData computed:', selectedPluginId.value, 'hasData:', !!data, 'mapSize:', dataMap.size);
+    return data;
   });
 
   // 当前选中插件的健康状态（确保响应式追踪正确）
@@ -154,9 +162,17 @@ export const usePluginStore = defineStore('plugin', () => {
     try {
       const result = await safeInvoke<Result<PluginData[]>>('refresh_all', { force });
       if (result.success && result.data) {
-        const dataMap = new Map<string, PluginData>();
-        result.data.forEach(d => dataMap.set(d.pluginId, d));
-        pluginData.value = dataMap;
+        // 合并到现有 Map，只更新时间戳更新的数据（避免覆盖 refreshPlugin 的新数据）
+        const newMap = new Map(pluginData.value);
+        result.data.forEach(d => {
+          const existing = newMap.get(d.pluginId);
+          // 只在没有现有数据，或新数据更新时才更新
+          if (!existing || new Date(d.lastUpdated) >= new Date(existing.lastUpdated)) {
+            newMap.set(d.pluginId, d);
+          }
+        });
+        pluginData.value = newMap;
+        console.log('[Plugin] fetchAllData 完成，数据条数:', newMap.size);
       } else if (!result.success) {
         error.value = result.error?.message ?? '获取插件数据失败';
       }
@@ -199,6 +215,8 @@ export const usePluginStore = defineStore('plugin', () => {
         if (plugin) plugin.enabled = true;
         // 持久化启用状态
         await persistEnabledPlugins();
+        // 广播插件启用事件
+        await broadcastPluginEnabled(id);
         return true;
       }
       error.value = result.error?.message ?? '启用插件失败';
@@ -222,6 +240,19 @@ export const usePluginStore = defineStore('plugin', () => {
         if (plugin) plugin.enabled = false;
         // 持久化禁用状态
         await persistEnabledPlugins();
+        // 广播插件禁用事件
+        await broadcastPluginDisabled(id);
+        // 如果当前选中的插件被禁用，自动切换到下一个可用插件
+        if (selectedPluginId.value === id) {
+          const nextPlugin = plugins.value.find(p => p.enabled && p.dataType && p.id !== id);
+          if (nextPlugin) {
+            await selectPlugin(nextPlugin.id);
+          } else {
+            // 没有可用插件，清空选择
+            selectedPluginId.value = '';
+            await storageService.set(STORAGE_KEYS.SELECTED_PLUGIN_ID, '');
+          }
+        }
         return true;
       }
       error.value = result.error?.message ?? '禁用插件失败';
@@ -237,30 +268,41 @@ export const usePluginStore = defineStore('plugin', () => {
   // 刷新单个插件
   async function refreshPlugin(id: string, force = false): Promise<PluginData | null> {
     try {
+      console.log('[Plugin] refreshPlugin 开始:', id, 'force:', force);
       const result = await safeInvoke<Result<PluginData>>('refresh_plugin', { id, force });
+      console.log('[Plugin] refreshPlugin 原始返回:', id, JSON.stringify(result.data, null, 2));
       if (result.success && result.data) {
         // 创建新 Map 触发 Vue 响应式更新（ref<Map> 不追踪 Map.set）
         const newMap = new Map(pluginData.value);
         newMap.set(id, result.data);
         pluginData.value = newMap;
+        console.log('[Plugin] refreshPlugin 成功:', id, 'dataType:', result.data.dataType, 'Map size:', newMap.size);
         return result.data;
       }
       if (!result.success) {
+        console.warn('[Plugin] refreshPlugin 失败:', id, result.error?.message);
         error.value = result.error?.message ?? '刷新插件数据失败';
       }
       return null;
     } catch (e) {
+      console.error('[Plugin] refreshPlugin 异常:', id, e);
       error.value = e instanceof Error ? e.message : '刷新插件数据失败';
       return null;
     }
   }
 
-  // 获取插件配置
+  // 获取插件配置（优先后端，fallback 本地存储）
   async function getPluginConfig(id: string): Promise<Record<string, unknown> | null> {
     try {
       const result = await safeInvoke<Result<Record<string, unknown>>>('get_plugin_config', { id });
-      if (result.success && result.data) {
+      if (result.success && result.data && Object.keys(result.data).length > 0) {
         return result.data;
+      }
+      // 后端配置为空时，fallback 到本地存储
+      const localConfig = await storageService.getPluginConfig<Record<string, unknown>>(id);
+      if (localConfig && Object.keys(localConfig).length > 0) {
+        console.info(`[Plugin] 使用本地存储的配置: ${id}`);
+        return localConfig;
       }
       if (!result.success) {
         error.value = result.error?.message ?? '获取插件配置失败';
@@ -413,17 +455,15 @@ export const usePluginStore = defineStore('plugin', () => {
     await storageService.updateAppSettings({ enabledPlugins: enabledIds });
   }
 
-  // 选择插件（同步到其他窗口，持久化，按需加载数据）
+  // 选择插件（同步到其他窗口，持久化，执行插件获取最新数据）
   async function selectPlugin(pluginId: string): Promise<void> {
     selectedPluginId.value = pluginId;
     // 持久化选择
     await storageService.set(STORAGE_KEYS.SELECTED_PLUGIN_ID, pluginId);
     // 广播到其他窗口
     await broadcastPluginSelection(pluginId);
-    // 按需加载该插件的数据（如果尚未加载）
-    if (!pluginData.value.has(pluginId)) {
-      await refreshPlugin(pluginId, false);
-    }
+    // 每次切换都执行插件获取最新数据
+    await refreshPlugin(pluginId, true);
   }
 
   // 广播插件选择到其他窗口
@@ -435,6 +475,66 @@ export const usePluginStore = defineStore('plugin', () => {
       await emit(PLUGIN_SELECTED_EVENT, pluginId);
     } catch (e) {
       console.warn('[Plugin] 广播插件选择失败:', e);
+    }
+  }
+
+  // 广播插件禁用事件到其他窗口
+  async function broadcastPluginDisabled(pluginId: string): Promise<void> {
+    if (!isTauri) return;
+    try {
+      const { emit } = await import('@tauri-apps/api/event');
+      console.log('[Plugin] 广播插件禁用:', pluginId);
+      await emit(PLUGIN_DISABLED_EVENT, pluginId);
+    } catch (e) {
+      console.warn('[Plugin] 广播插件禁用失败:', e);
+    }
+  }
+
+  // 广播插件启用事件到其他窗口
+  async function broadcastPluginEnabled(pluginId: string): Promise<void> {
+    if (!isTauri) return;
+    try {
+      const { emit } = await import('@tauri-apps/api/event');
+      console.log('[Plugin] 广播插件启用:', pluginId);
+      await emit(PLUGIN_ENABLED_EVENT, pluginId);
+    } catch (e) {
+      console.warn('[Plugin] 广播插件启用失败:', e);
+    }
+  }
+
+  // 监听插件禁用事件（返回 cleanup 函数）
+  async function setupPluginDisabledListener(callback: (pluginId: string) => void): Promise<() => void> {
+    if (!isTauri) return () => {};
+    try {
+      const { listen } = await import('@tauri-apps/api/event');
+      console.log('[Plugin] 开始监听插件禁用事件');
+      const unlisten = await listen<string>(PLUGIN_DISABLED_EVENT, (event) => {
+        const disabledPluginId = event.payload;
+        console.log('[Plugin] 收到插件禁用事件:', disabledPluginId);
+        callback(disabledPluginId);
+      });
+      return unlisten;
+    } catch (e) {
+      console.warn('[Plugin] 监听插件禁用失败:', e);
+      return () => {};
+    }
+  }
+
+  // 监听插件启用事件（返回 cleanup 函数）
+  async function setupPluginEnabledListener(callback: (pluginId: string) => void): Promise<() => void> {
+    if (!isTauri) return () => {};
+    try {
+      const { listen } = await import('@tauri-apps/api/event');
+      console.log('[Plugin] 开始监听插件启用事件');
+      const unlisten = await listen<string>(PLUGIN_ENABLED_EVENT, (event) => {
+        const enabledPluginId = event.payload;
+        console.log('[Plugin] 收到插件启用事件:', enabledPluginId);
+        callback(enabledPluginId);
+      });
+      return unlisten;
+    } catch (e) {
+      console.warn('[Plugin] 监听插件启用失败:', e);
+      return () => {};
     }
   }
 
@@ -528,13 +628,9 @@ export const usePluginStore = defineStore('plugin', () => {
         selectedPluginId.value = firstPlugin.id;
       }
     }
-    // 5. 只获取健康状态（数据按需加载）
-    await fetchAllHealth();
-    // 6. 按需加载选中插件的数据
-    if (selectedPluginId.value && !pluginData.value.has(selectedPluginId.value)) {
-      await refreshPlugin(selectedPluginId.value, false);
-    }
-    // 7. 监听其他窗口的插件选择
+    // 5. 获取健康状态和所有插件数据（确保 UI 有数据可显示）
+    await Promise.all([fetchAllHealth(), fetchAllData()]);
+    // 6. 监听其他窗口的插件选择
     await setupPluginSelectionListener();
   }
 
@@ -727,6 +823,8 @@ export const usePluginStore = defineStore('plugin', () => {
     init,
     selectPlugin,
     setupPluginSelectionListener,
+    setupPluginDisabledListener,
+    setupPluginEnabledListener,
     // 安装方法
     isInstalled,
     getInstallStatus,

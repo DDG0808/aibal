@@ -1,42 +1,33 @@
 <script setup lang="ts">
 /**
  * 系统状态卡片组件
- * 显示系统状态和健康插件数量
+ * 显示系统状态和启动插件数量
  */
 import { computed } from 'vue';
 
 interface Props {
-  /** 健康插件数量 */
-  healthyCount?: number;
-  /** 总插件数量 */
-  totalCount?: number;
+  /** 启动插件数量 */
+  runningCount?: number;
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  healthyCount: 0,
-  totalCount: 0,
+  runningCount: 0,
 });
 
 // 状态配置
 const statusConfig = computed(() => {
-  if (props.totalCount === 0) {
+  if (props.runningCount === 0) {
     return { color: 'var(--color-text-tertiary)' };
   }
-  if (props.healthyCount === props.totalCount) {
-    return { color: 'var(--color-accent-green)' };
-  }
-  if (props.healthyCount === 0) {
-    return { color: 'var(--color-accent-red)' };
-  }
-  return { color: 'var(--color-accent)' };
+  return { color: 'var(--color-accent-green)' };
 });
 
 // 描述文字
 const description = computed(() => {
-  if (props.totalCount === 0) {
+  if (props.runningCount === 0) {
     return '暂无插件';
   }
-  return `共 ${props.healthyCount} 个健康插件`;
+  return `共 ${props.runningCount} 个启动插件`;
 });
 </script>
 

@@ -162,6 +162,7 @@ const handleToggleTheme = () => {
         class="dropdown-menu"
         @click.stop
       >
+        <div class="dropdown-label">切换监控源</div>
         <div
           v-for="plugin in plugins"
           :key="plugin.id"
@@ -169,7 +170,29 @@ const handleToggleTheme = () => {
           :class="{ 'is-selected': plugin.id === selectedPluginId }"
           @click="selectPlugin(plugin.id)"
         >
-          {{ plugin.name }}
+          <div class="dropdown-item-icon">
+            <svg viewBox="0 0 24 24" fill="none">
+              <rect x="3" y="4" width="18" height="14" rx="2" stroke="currentColor" stroke-width="2"/>
+              <line x1="7" y1="11" x2="17" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </div>
+          <div class="dropdown-item-content">
+            <span class="dropdown-item-name">{{ plugin.name }}</span>
+          </div>
+          <svg
+            v-if="plugin.id === selectedPluginId"
+            class="dropdown-check"
+            viewBox="0 0 24 24"
+            fill="none"
+          >
+            <path
+              d="M5 12l5 5L20 7"
+              stroke="currentColor"
+              stroke-width="3"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+          </svg>
         </div>
       </div>
     </div>
@@ -387,30 +410,76 @@ const handleToggleTheme = () => {
   top: 100%;
   left: 0;
   min-width: 180px;
-  background: var(--color-bg-card);
+  background: var(--color-bg-secondary);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  box-shadow: var(--shadow-lg);
   z-index: 100;
   overflow: hidden;
   margin-top: 4px;
 }
 
+.dropdown-label {
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+  padding: 6px 12px;
+  background: var(--color-bg-tertiary);
+}
+
 .dropdown-item {
-  padding: var(--spacing-sm) var(--spacing-md);
-  font-size: 0.875rem;
-  color: var(--color-text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
   cursor: pointer;
-  transition: background-color 0.15s ease;
+  transition: background var(--transition-fast);
+  border-top: 1px solid var(--color-border);
 }
 
 .dropdown-item:hover {
-  background: var(--color-bg-secondary);
+  background: var(--color-bg-hover);
 }
 
 .dropdown-item.is-selected {
-  background: var(--color-accent);
-  color: white;
+  background: var(--color-bg-tertiary);
+}
+
+.dropdown-item-icon {
+  width: 28px;
+  height: 28px;
+  background: rgba(34, 197, 94, 0.15);
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-accent-green);
+  flex-shrink: 0;
+}
+
+.dropdown-item-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.dropdown-item-content {
+  flex: 1;
+  min-width: 0;
+}
+
+.dropdown-item-name {
+  font-size: 0.8125rem;
+  font-weight: 500;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dropdown-check {
+  color: var(--color-accent);
+  flex-shrink: 0;
+  width: 16px;
+  height: 16px;
 }
 
 .dropdown-backdrop {
