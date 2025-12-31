@@ -120,7 +120,7 @@ export async function fetchData(config, context) {
 
 ### 4. 安装插件
 
-将插件目录复制到 `~/.config/aibal/plugins/` 或通过应用内 Marketplace 安装。
+将插件目录复制到 `~/.config/aibal/plugins/` 或通过应用内 Marketplace（敬请期待）安装。
 
 ---
 
@@ -873,7 +873,7 @@ cd my-plugin
 zip -r ../my-plugin-1.0.0.zip .
 ```
 
-### 4. 提交到 Marketplace
+### 4. 提交到 Marketplace（敬请期待）
 
 联系 AiBal 团队或通过 GitHub 提交 PR 到官方插件仓库。
 
