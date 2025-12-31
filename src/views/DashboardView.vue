@@ -15,19 +15,24 @@ const router = useRouter();
 
 // 状态
 const isLoading = ref(false);
-const selectedPluginId = ref('');
+const isSwitching = ref(false);  // 切换插件时的加载状态
 const showPluginDropdown = ref(false);
+
+// 使用 store 中的 selectedPluginId（跨窗口同步）
+const selectedPluginId = computed({
+  get: () => pluginStore.selectedPluginId,
+  set: (val: string) => pluginStore.selectPlugin(val),
+});
 
 // 从 Store 获取数据（支持所有数据类型）
 const plugins = computed(() => pluginStore.plugins.filter(p => p.enabled && p.dataType));
 const hasPlugins = computed(() => plugins.value.length > 0);
 const selectedPlugin = computed(() => plugins.value.find(p => p.id === selectedPluginId.value));
-const healthData = computed(() => pluginStore.pluginHealth.get(selectedPluginId.value));
+// 使用 store 的 computed 确保响应式追踪正确
+const healthData = computed(() => pluginStore.selectedPluginHealth);
 
-// 当前数据和类型
-const currentData = computed<PluginData | null>(() => {
-  return pluginStore.pluginData.get(selectedPluginId.value) ?? null;
-});
+// 当前数据和类型（使用 store 的 computed 确保响应式追踪正确）
+const currentData = computed<PluginData | null>(() => pluginStore.selectedPluginData);
 const currentDataType = computed(() => currentData.value?.dataType ?? selectedPlugin.value?.dataType);
 
 // 插件下拉框
@@ -37,9 +42,19 @@ function toggleDropdown() {
   }
 }
 
-function selectPlugin(id: string) {
-  selectedPluginId.value = id;
+async function selectPlugin(id: string) {
   showPluginDropdown.value = false;
+  // 如果数据未加载，显示切换加载状态
+  if (!pluginStore.pluginData.has(id)) {
+    isSwitching.value = true;
+    try {
+      await pluginStore.selectPlugin(id);
+    } finally {
+      isSwitching.value = false;
+    }
+  } else {
+    await pluginStore.selectPlugin(id);
+  }
 }
 
 // 获取插件余额显示信息（值和标签分开，用于不同颜色渲染）
@@ -219,20 +234,35 @@ function getItemProgressColor(percentage: number): string {
   return 'var(--color-accent-green)';
 }
 
+// 格式化大数字（智能单位转换）
+function formatLargeNumber(n: number): string {
+  if (n === 0) return '0';
+  const absN = Math.abs(n);
+  if (absN >= 1_000_000_000) {
+    const val = n / 1_000_000_000;
+    return val % 1 === 0 ? `${val}B` : `${val.toFixed(1)}B`;
+  }
+  if (absN >= 1_000_000) {
+    const val = n / 1_000_000;
+    return val % 1 === 0 ? `${val}M` : `${val.toFixed(1)}M`;
+  }
+  if (absN >= 10_000) {
+    const val = n / 1_000;
+    return val % 1 === 0 ? `${val}K` : `${val.toFixed(1)}K`;
+  }
+  // 小数字保留精度
+  if (n === Math.floor(n)) return n.toString();
+  return n.toFixed(n < 10 ? 3 : 2);
+}
+
 // 格式化 item 已用量显示
 function formatItemUsed(item: { used: number; quota: number; currency?: string }): string {
   const currency = item.currency || '%';
-  // 如果有小数，保留合适的精度
-  const formatNum = (n: number) => {
-    if (n === Math.floor(n)) return n.toString();
-    return n.toFixed(n < 10 ? 3 : 2);
-  };
   // 按量付费模式（quota 为 0）只显示剩余
   if (!item.quota || item.quota === 0) {
-    // 对于按量付费，used 实际是 remaining（剩余额度）
-    return `剩余 ${formatNum(item.used)} ${currency}`;
+    return `剩余 ${formatLargeNumber(item.used)} ${currency}`;
   }
-  return `${formatNum(item.used)} / ${formatNum(item.quota)} ${currency}`;
+  return `${formatLargeNumber(item.used)} / ${formatLargeNumber(item.quota)} ${currency}`;
 }
 
 // 格式化 item 重置/到期信息
@@ -282,14 +312,24 @@ function goToPluginConfig() {
   }
 }
 
+// 初始化状态
+const isInitializing = ref(true);
+
 // 初始化
 onMounted(async () => {
-  // 始终调用 init 确保 plugins/data/health 都已加载
-  await pluginStore.init();
-  // 选择第一个有数据类型的插件
-  const firstPlugin = plugins.value[0];
-  if (firstPlugin) {
-    selectedPluginId.value = firstPlugin.id;
+  isInitializing.value = true;
+  try {
+    // init 会恢复持久化的选择并按需加载数据
+    await pluginStore.init();
+    // 如果 store 中没有选中插件，选择第一个有数据类型的插件
+    if (!pluginStore.selectedPluginId) {
+      const firstPlugin = plugins.value[0];
+      if (firstPlugin) {
+        await pluginStore.selectPlugin(firstPlugin.id);
+      }
+    }
+  } finally {
+    isInitializing.value = false;
   }
   // 若无插件，selectedPluginId 保持空，UI 会显示空状态
 });
@@ -302,8 +342,14 @@ onMounted(async () => {
     </template>
 
     <div class="dashboard">
+      <!-- 初始化加载状态 -->
+      <div v-if="isInitializing" class="init-loading">
+        <div class="init-spinner"></div>
+        <span class="init-text">正在加载...</span>
+      </div>
+
       <!-- 空状态 -->
-      <div v-if="!hasPlugins" class="empty-state">
+      <div v-else-if="!hasPlugins" class="empty-state">
         <!-- 背景装饰 -->
         <div class="empty-bg-decoration">
           <div class="decoration-circle decoration-circle-1"></div>
@@ -429,6 +475,12 @@ onMounted(async () => {
 
       <!-- 主插件卡片（有插件时） -->
       <div v-else class="plugin-card">
+        <!-- 切换加载蒙层 -->
+        <div v-if="isSwitching" class="switching-overlay">
+          <div class="switching-spinner"></div>
+          <span class="switching-text">加载中...</span>
+        </div>
+
         <div class="card-header">
           <div class="plugin-info">
             <div
@@ -671,6 +723,30 @@ onMounted(async () => {
   max-width: 800px;
 }
 
+/* 初始化加载状态 */
+.init-loading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 300px;
+  gap: var(--spacing-lg);
+}
+
+.init-spinner {
+  width: 48px;
+  height: 48px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.init-text {
+  font-size: 0.9375rem;
+  color: var(--color-text-secondary);
+}
+
 /* 空状态 */
 .empty-state {
   position: relative;
@@ -897,9 +973,39 @@ onMounted(async () => {
 }
 
 .plugin-card {
+  position: relative;
   background: var(--color-bg-card);
   border-radius: var(--radius-xl);
   padding: var(--spacing-xl);
+}
+
+/* 切换加载蒙层 */
+.switching-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--spacing-md);
+  background: rgba(0, 0, 0, 0.6);
+  backdrop-filter: blur(4px);
+  border-radius: var(--radius-xl);
+  z-index: 50;
+}
+
+.switching-spinner {
+  width: 40px;
+  height: 40px;
+  border: 3px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
+}
+
+.switching-text {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
 }
 
 .card-header {
@@ -1436,10 +1542,10 @@ onMounted(async () => {
 }
 
 .refreshable-badge {
-  background: rgba(249, 115, 22, 0.15);
-  color: var(--color-accent);
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--color-accent-green);
   padding: 2px var(--spacing-sm);
-  border-radius: 9999px;
+  border-radius: var(--radius-sm);
   font-size: 0.6875rem;
   font-weight: 500;
 }

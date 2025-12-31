@@ -259,24 +259,31 @@ pub struct UsageData {
 #[serde(rename_all = "camelCase")]
 pub struct BalanceItem {
     /// 子项名称（如 PAYGO, PLUS, FREE）
+    /// 兼容插件的 label 和 limitType 字段
+    #[serde(alias = "label", alias = "limitType")]
     pub name: String,
     /// 已用额度
-    #[serde(default)]
+    /// 兼容插件的 currentValue 字段
+    #[serde(default, alias = "currentValue")]
     pub used: f64,
     /// 总额度
-    #[serde(default)]
+    /// 兼容插件的 usage 字段
+    #[serde(default, alias = "usage")]
     pub quota: f64,
     /// 使用百分比 (0-100)
     #[serde(default)]
     pub percentage: f64,
     /// 货币/单位
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// 兼容插件的 unit 字段
+    #[serde(skip_serializing_if = "Option::is_none", alias = "unit")]
     pub currency: Option<String>,
     /// 重置时间 (ISO 8601)
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// 兼容插件的 nextResetTime 字段
+    #[serde(skip_serializing_if = "Option::is_none", alias = "nextResetTime")]
     pub reset_time: Option<String>,
     /// 重置标签（如 "今日已用完"、"12-31 04:43 可重置"）
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// 兼容插件的 statusText 字段
+    #[serde(skip_serializing_if = "Option::is_none", alias = "statusText")]
     pub reset_label: Option<String>,
     /// 到期时间 (ISO 8601)
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -310,7 +317,8 @@ pub struct BalanceData {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<String>,
     /// 多配额子项（如 PAYGO/PLUS/FREE）
-    #[serde(skip_serializing_if = "Option::is_none")]
+    /// 兼容插件返回的 limits 字段
+    #[serde(skip_serializing_if = "Option::is_none", alias = "limits")]
     pub items: Option<Vec<BalanceItem>>,
 }
 

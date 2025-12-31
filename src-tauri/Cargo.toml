@@ -21,6 +21,8 @@ tauri = { version = "2.9", features = ["tray-icon", "macos-private-api"] }
 tauri-plugin-store = "2.4"
 tauri-plugin-notification = "2.3"
 tauri-plugin-log = "2"
+# 窗口定位插件 - 支持托盘弹窗定位和多显示器
+tauri-plugin-positioner = { version = "2", features = ["tray-icon"] }
 
 # 序列化
 serde = { version = "1", features = ["derive"] }

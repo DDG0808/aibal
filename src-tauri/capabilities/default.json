@@ -3,7 +3,10 @@
   "identifier": "default",
   "description": "CUK 默认权限配置",
   "windows": [
-    "main"
+    "main",
+    "settings",
+    "wizard",
+    "about"
   ],
   "permissions": [
     "core:default",

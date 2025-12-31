@@ -25,6 +25,8 @@ export const STORAGE_KEYS = {
   PLUGIN_DATA_PREFIX: 'plugin_data:',
   /** 首次设置完成标志 */
   SETUP_COMPLETED: 'setup_completed',
+  /** 仪表盘选中的插件 ID */
+  SELECTED_PLUGIN_ID: 'selected_plugin_id',
 } as const;
 
 // ============================================================================
@@ -133,6 +135,8 @@ class StorageService {
   async set<T>(key: string, value: T): Promise<void> {
     const store = await this.getStore();
     await store.set(key, value);
+    // 持久化到磁盘，确保数据在重启后不丢失
+    await store.save();
   }
 
   /**
@@ -140,7 +144,10 @@ class StorageService {
    */
   async delete(key: string): Promise<boolean> {
     const store = await this.getStore();
-    return store.delete(key);
+    const result = await store.delete(key);
+    // 持久化到磁盘
+    await store.save();
+    return result;
   }
 
   /**
@@ -165,6 +172,8 @@ class StorageService {
   async clear(): Promise<void> {
     const store = await this.getStore();
     await store.clear();
+    // 持久化到磁盘
+    await store.save();
   }
 
   /**

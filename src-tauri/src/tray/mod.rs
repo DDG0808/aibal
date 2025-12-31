@@ -6,6 +6,7 @@ use tauri::{
     tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent},
     AppHandle, Emitter, Manager, Runtime, Wry,
 };
+use tauri_plugin_positioner::{Position, WindowExt};
 
 use crate::window::{WindowManager, WindowType};
 
@@ -89,6 +90,8 @@ pub fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), tauri::Error> {
 
         // 注册托盘图标事件处理器
         tray.on_tray_icon_event(|tray, event| {
+            // 调用 positioner 插件处理托盘位置状态
+            tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
             handle_tray_event(tray, event);
         });
 
@@ -110,6 +113,8 @@ pub fn setup_tray<R: Runtime>(app: &AppHandle<R>) -> Result<(), tauri::Error> {
             handle_menu_event(app, &event.id.0);
         })
         .on_tray_icon_event(|tray, event| {
+            // 调用 positioner 插件处理托盘位置状态
+            tauri_plugin_positioner::on_tray_event(tray.app_handle(), &event);
             handle_tray_event(tray, event);
         })
         .build(app)?;
@@ -185,19 +190,25 @@ fn handle_tray_event<R: Runtime>(tray: &TrayIcon<R>, event: TrayIconEvent) {
         TrayIconEvent::Click {
             button: MouseButton::Left,
             button_state: MouseButtonState::Up,
+            position,
+            rect,
             ..
         } => {
             // 左键点击 - 切换主窗口显示
-            log::debug!("托盘左键点击");
-            toggle_main_window(tray.app_handle());
+            // 传递托盘图标的位置和尺寸用于精确定位
+            log::debug!("托盘左键点击: position={:?}, rect={:?}", position, rect);
+            toggle_main_window(tray.app_handle(), Some((position, rect)));
         }
         TrayIconEvent::DoubleClick {
             button: MouseButton::Left,
+            position,
+            rect,
             ..
         } => {
             // 左键双击 - 显示主窗口
             log::debug!("托盘左键双击");
             if let Some(window) = tray.app_handle().get_webview_window("main") {
+                position_window_near_tray(&window, Some((position, rect)));
                 if let Err(e) = window.show() {
                     log::warn!("显示主窗口失败: {}", e);
                 }
@@ -210,8 +221,11 @@ fn handle_tray_event<R: Runtime>(tray: &TrayIcon<R>, event: TrayIconEvent) {
     }
 }
 
+/// 托盘位置信息类型
+type TrayPosition = (tauri::PhysicalPosition<f64>, tauri::Rect);
+
 /// 切换主窗口显示状态
-fn toggle_main_window<R: Runtime>(app: &AppHandle<R>) {
+fn toggle_main_window<R: Runtime>(app: &AppHandle<R>, tray_info: Option<TrayPosition>) {
     if let Some(window) = app.get_webview_window("main") {
         match window.is_visible() {
             Ok(true) => {
@@ -221,7 +235,7 @@ fn toggle_main_window<R: Runtime>(app: &AppHandle<R>) {
             }
             Ok(false) => {
                 // 定位窗口到托盘图标下方
-                position_window_near_tray(&window);
+                position_window_near_tray(&window, tray_info);
                 if let Err(e) = window.show() {
                     log::warn!("显示主窗口失败: {}", e);
                 }
@@ -236,42 +250,71 @@ fn toggle_main_window<R: Runtime>(app: &AppHandle<R>) {
     }
 }
 
-/// macOS 菜单栏高度常量
-/// - 标准 Mac: 22px
-/// - 刘海屏 Mac (MacBook Pro 14/16 2021+): 37px
-/// 使用最大值以确保兼容所有机型
-const MACOS_MENUBAR_HEIGHT: i32 = 37;
-
-/// 窗口边距
-const WINDOW_MARGIN: i32 = 8;
+/// 窗口与菜单栏的间距
+const WINDOW_PADDING: f64 = 4.0;
 
 /// 将窗口定位到托盘图标附近
-fn position_window_near_tray<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+///
+/// 多显示器精确定位策略:
+/// 1. 使用托盘点击事件提供的精确位置 (包含正确的屏幕坐标)
+/// 2. 将窗口水平居中对齐到托盘图标
+/// 3. 窗口顶部紧贴菜单栏下方
+fn position_window_near_tray<R: Runtime>(
+    window: &tauri::WebviewWindow<R>,
+    tray_info: Option<TrayPosition>,
+) {
     // 获取窗口大小
-    if let Ok(size) = window.outer_size() {
-        // 获取主显示器
-        if let Some(monitor) = window.primary_monitor().ok().flatten() {
-            let screen_size = monitor.size();
-            let scale_factor = monitor.scale_factor();
+    let window_size = match window.outer_size() {
+        Ok(size) => size,
+        Err(e) => {
+            log::error!("获取窗口大小失败: {}", e);
+            return;
+        }
+    };
 
-            // 计算物理像素中的菜单栏高度
-            let menubar_height = (MACOS_MENUBAR_HEIGHT as f64 * scale_factor) as i32;
-            let margin = (WINDOW_MARGIN as f64 * scale_factor) as i32;
+    if let Some((_click_pos, tray_rect)) = tray_info {
+        // 使用托盘事件提供的精确位置
+        // tray_rect.position 和 tray_rect.size 是 DPI-aware 的枚举类型
+        // 需要转换为物理像素 (使用 scale_factor = 1.0，因为托盘事件通常返回物理坐标)
 
-            // macOS: 窗口显示在屏幕右上角 (托盘区域下方)
-            let x = (screen_size.width as i32 - size.width as i32 - margin).max(0);
-            let y = menubar_height + margin;
+        // 转换为物理坐标
+        let tray_pos: tauri::PhysicalPosition<i32> = tray_rect.position.to_physical(1.0);
+        let tray_size: tauri::PhysicalSize<u32> = tray_rect.size.to_physical(1.0);
 
-            if let Err(e) = window.set_position(tauri::Position::Physical(
-                tauri::PhysicalPosition::new(x, y),
-            )) {
-                log::warn!("设置窗口位置失败: x={}, y={}, error={}", x, y, e);
-            } else {
-                log::debug!(
-                    "窗口定位: x={}, y={} (scale_factor={:.2})",
-                    x, y, scale_factor
-                );
-            }
+        // 计算窗口位置：水平居中对齐托盘图标，垂直紧贴菜单栏下方
+        let tray_center_x = tray_pos.x as f64 + (tray_size.width as f64 / 2.0);
+        let window_x = tray_center_x - (window_size.width as f64 / 2.0);
+
+        // 窗口 Y 坐标：托盘图标底部 + 间距
+        let window_y = tray_pos.y as f64 + tray_size.height as f64 + WINDOW_PADDING;
+
+        log::debug!(
+            "多显示器定位: tray=({}, {}, {}x{}), window=({:.0}, {:.0})",
+            tray_pos.x, tray_pos.y,
+            tray_size.width, tray_size.height,
+            window_x, window_y
+        );
+
+        // 设置窗口位置 (使用物理像素)
+        if let Err(e) = window.set_position(tauri::Position::Physical(
+            tauri::PhysicalPosition::new(window_x as i32, window_y as i32),
+        )) {
+            log::warn!("设置窗口位置失败: {}", e);
+            // 回退到 positioner
+            fallback_position(window);
+        }
+    } else {
+        // 没有托盘位置信息，使用 positioner 插件
+        fallback_position(window);
+    }
+}
+
+/// 使用 positioner 插件作为回退定位方案
+fn fallback_position<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+    if let Err(e) = window.move_window_constrained(Position::TrayBottomCenter) {
+        log::warn!("positioner TrayBottomCenter 失败: {}", e);
+        if let Err(e2) = window.move_window(Position::TrayCenter) {
+            log::error!("positioner TrayCenter 也失败: {}", e2);
         }
     }
 }

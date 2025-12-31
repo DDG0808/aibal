@@ -1,11 +1,11 @@
 <script setup lang="ts">
 /**
  * 托盘弹窗头部组件
- * 显示插件选择器、运行状态指示
+ * 显示插件选择器、状态、刷新按钮、主题切换按钮
  */
 import { ref, computed } from 'vue';
 
-// 简化的插件接口，只需要id和name
+// 简化的插件接口
 interface SimplePlugin {
   id: string;
   name: string;
@@ -18,8 +18,10 @@ interface Props {
   selectedPluginId?: string;
   /** 是否正在刷新 */
   isRefreshing?: boolean;
-  /** 系统状态 (healthy/degraded/unhealthy) */
+  /** 系统状态 */
   systemStatus?: 'healthy' | 'degraded' | 'unhealthy';
+  /** 是否深色模式 */
+  isDarkMode?: boolean;
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -27,11 +29,13 @@ const props = withDefaults(defineProps<Props>(), {
   selectedPluginId: '',
   isRefreshing: false,
   systemStatus: 'healthy',
+  isDarkMode: true,
 });
 
 const emit = defineEmits<{
   (e: 'select-plugin', pluginId: string): void;
   (e: 'refresh'): void;
+  (e: 'toggle-theme'): void;
 }>();
 
 // 下拉菜单是否展开
@@ -73,10 +77,23 @@ const selectPlugin = (pluginId: string) => {
 const closeDropdown = () => {
   isDropdownOpen.value = false;
 };
+
+// 刷新
+const handleRefresh = () => {
+  if (!props.isRefreshing) {
+    emit('refresh');
+  }
+};
+
+// 切换主题
+const handleToggleTheme = () => {
+  emit('toggle-theme');
+};
 </script>
 
 <template>
   <header class="tray-header">
+    <!-- 左侧：插件选择器 -->
     <div
       class="header-left"
       @click="toggleDropdown"
@@ -110,7 +127,7 @@ const closeDropdown = () => {
       <div class="header-info">
         <div class="plugin-selector">
           <h1 class="plugin-name">
-            {{ selectedPlugin?.name || '选择插件' }} 配额
+            {{ selectedPlugin?.name || '选择插件' }}
           </h1>
           <svg
             v-if="plugins.length > 1"
@@ -157,7 +174,91 @@ const closeDropdown = () => {
       </div>
     </div>
 
-    <!-- 点击外部关闭 -->
+    <!-- 右侧：操作按钮 -->
+    <div class="header-actions">
+      <!-- 刷新按钮 -->
+      <button
+        type="button"
+        class="icon-btn"
+        :class="{ 'is-refreshing': isRefreshing }"
+        :disabled="isRefreshing"
+        :title="isRefreshing ? '正在刷新' : '刷新数据'"
+        @click="handleRefresh"
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M21 12a9 9 0 11-2.636-6.364"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          />
+          <path
+            d="M21 3v6h-6"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
+
+      <!-- 明暗主题切换按钮 -->
+      <button
+        type="button"
+        class="icon-btn"
+        :title="isDarkMode ? '切换到浅色模式' : '切换到深色模式'"
+        @click="handleToggleTheme"
+      >
+        <!-- 深色模式图标（月亮） -->
+        <svg
+          v-if="isDarkMode"
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <path
+            d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+        <!-- 浅色模式图标（太阳） -->
+        <svg
+          v-else
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+          xmlns="http://www.w3.org/2000/svg"
+        >
+          <circle
+            cx="12"
+            cy="12"
+            r="5"
+            stroke="currentColor"
+            stroke-width="2"
+          />
+          <path
+            d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+          />
+        </svg>
+      </button>
+    </div>
+
+    <!-- 点击外部关闭下拉 -->
     <div
       v-if="isDropdownOpen"
       class="dropdown-backdrop"
@@ -172,7 +273,7 @@ const closeDropdown = () => {
   align-items: center;
   justify-content: space-between;
   padding: var(--spacing-md);
-  background: var(--color-bg);
+  background: var(--color-bg-secondary);
   position: relative;
 }
 
@@ -190,7 +291,7 @@ const closeDropdown = () => {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-bg-secondary);
+  background: var(--color-bg);
   border-radius: var(--radius-md);
   color: var(--color-text-secondary);
 }
@@ -240,6 +341,45 @@ const closeDropdown = () => {
 .status-text {
   font-size: 0.75rem;
   color: var(--color-text-secondary);
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.icon-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: none;
+  border-radius: var(--radius-sm);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.icon-btn:hover {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.icon-btn.is-refreshing svg {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 .dropdown-menu {

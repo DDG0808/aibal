@@ -1848,20 +1848,10 @@ impl PluginManager {
     throw new Error('插件未导出 fetchData 函数');
   }}
 
-  var config = {};
-  var result = __exports.fetchData(config, context);
-
-  // 处理 Promise（如果是 async function）
-  if (result && typeof result.then === 'function') {{
-    // 同步等待 Promise（QuickJS 限制：需要 Promise 立即 resolve）
-    var resolved = null;
-    var rejected = null;
-    result.then(function(v) {{ resolved = v; }}, function(e) {{ rejected = e; }});
-    if (rejected) throw rejected;
-    return resolved;
-  }}
-
-  return result;
+  var config = {5};
+  // 直接返回 fetchData 的结果（可能是 Promise）
+  // execute_plugin 会正确处理异步 Promise
+  return __exports.fetchData(config, context);
 }})()"#,
             plugin_id,
             config_json,
@@ -2042,7 +2032,7 @@ impl PluginManager {
                                 reset_label,
                                 expires_at: item.get("expiresAt").and_then(|v| v.as_str()).map(|s| s.to_string()),
                                 remaining_days: item.get("remainingDays").and_then(|v| v.as_i64()),
-                                refreshable: item.get("refreshable").and_then(|v| v.as_bool()).unwrap_or(true),  // 默认可刷新
+                                refreshable: item.get("refreshable").and_then(|v| v.as_bool()).unwrap_or(true),
                             })
                         })
                         .collect()

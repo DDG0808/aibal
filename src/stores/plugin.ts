@@ -7,10 +7,13 @@
 import { defineStore } from 'pinia';
 import { ref, computed } from 'vue';
 import type { PluginInfo, PluginData, PluginHealth, Result, InstallStatus, UpdateInfo } from '@/types';
-import { marketplaceService } from '@/services';
+import { marketplaceService, storageService, STORAGE_KEYS } from '@/services';
 
 // Tauri 环境检测
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+// 插件选择同步事件名称
+const PLUGIN_SELECTED_EVENT = 'window:plugin_selected';
 
 // 安全的 invoke 调用（浏览器环境返回模拟数据）
 async function safeInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
@@ -88,6 +91,9 @@ export const usePluginStore = defineStore('plugin', () => {
   const isRefreshing = ref(false);
   const error = ref<string | null>(null);
 
+  // 当前选中的插件 ID（跨窗口同步）
+  const selectedPluginId = ref<string>('');
+
   // 安装状态追踪 (pluginId -> InstallStatus)
   const installingPlugins = ref<Map<string, InstallStatus>>(new Map());
   const installErrors = ref<Map<string, string>>(new Map());
@@ -110,6 +116,18 @@ export const usePluginStore = defineStore('plugin', () => {
     if (healths.length === 0) return 100;
     const sum = healths.reduce((acc, h) => acc + h.successRate, 0);
     return Math.round((sum / healths.length) * 100);
+  });
+
+  // 当前选中插件的数据（确保响应式追踪正确）
+  const selectedPluginData = computed<PluginData | null>(() => {
+    if (!selectedPluginId.value) return null;
+    return pluginData.value.get(selectedPluginId.value) ?? null;
+  });
+
+  // 当前选中插件的健康状态（确保响应式追踪正确）
+  const selectedPluginHealth = computed<PluginHealth | null>(() => {
+    if (!selectedPluginId.value) return null;
+    return pluginHealth.value.get(selectedPluginId.value) ?? null;
   });
 
   // 获取插件列表
@@ -179,6 +197,8 @@ export const usePluginStore = defineStore('plugin', () => {
       if (result.success) {
         const plugin = plugins.value.find(p => p.id === id);
         if (plugin) plugin.enabled = true;
+        // 持久化启用状态
+        await persistEnabledPlugins();
         return true;
       }
       error.value = result.error?.message ?? '启用插件失败';
@@ -200,6 +220,8 @@ export const usePluginStore = defineStore('plugin', () => {
       if (result.success) {
         const plugin = plugins.value.find(p => p.id === id);
         if (plugin) plugin.enabled = false;
+        // 持久化禁用状态
+        await persistEnabledPlugins();
         return true;
       }
       error.value = result.error?.message ?? '禁用插件失败';
@@ -217,7 +239,10 @@ export const usePluginStore = defineStore('plugin', () => {
     try {
       const result = await safeInvoke<Result<PluginData>>('refresh_plugin', { id, force });
       if (result.success && result.data) {
-        pluginData.value.set(id, result.data);
+        // 创建新 Map 触发 Vue 响应式更新（ref<Map> 不追踪 Map.set）
+        const newMap = new Map(pluginData.value);
+        newMap.set(id, result.data);
+        pluginData.value = newMap;
         return result.data;
       }
       if (!result.success) {
@@ -282,6 +307,10 @@ export const usePluginStore = defineStore('plugin', () => {
   // 保存插件配置
   async function savePluginConfig(id: string, config: Record<string, unknown>): Promise<boolean> {
     try {
+      // 1. 先持久化到本地存储（确保重启后配置不丢失）
+      await storageService.setPluginConfig(id, config);
+
+      // 2. 同步到后端内存
       const result = await safeInvoke<Result>('set_plugin_config', { id, config });
       if (!result.success) {
         error.value = result.error?.message ?? '保存插件配置失败';
@@ -378,13 +407,135 @@ export const usePluginStore = defineStore('plugin', () => {
     }
   }
 
+  // 持久化启用的插件列表
+  async function persistEnabledPlugins(): Promise<void> {
+    const enabledIds = plugins.value.filter(p => p.enabled).map(p => p.id);
+    await storageService.updateAppSettings({ enabledPlugins: enabledIds });
+  }
+
+  // 选择插件（同步到其他窗口，持久化，按需加载数据）
+  async function selectPlugin(pluginId: string): Promise<void> {
+    selectedPluginId.value = pluginId;
+    // 持久化选择
+    await storageService.set(STORAGE_KEYS.SELECTED_PLUGIN_ID, pluginId);
+    // 广播到其他窗口
+    await broadcastPluginSelection(pluginId);
+    // 按需加载该插件的数据（如果尚未加载）
+    if (!pluginData.value.has(pluginId)) {
+      await refreshPlugin(pluginId, false);
+    }
+  }
+
+  // 广播插件选择到其他窗口
+  async function broadcastPluginSelection(pluginId: string): Promise<void> {
+    if (!isTauri) return;
+    try {
+      const { emit } = await import('@tauri-apps/api/event');
+      console.log('[Plugin] 广播插件选择:', pluginId);
+      await emit(PLUGIN_SELECTED_EVENT, pluginId);
+    } catch (e) {
+      console.warn('[Plugin] 广播插件选择失败:', e);
+    }
+  }
+
+  // 监听其他窗口的插件选择
+  async function setupPluginSelectionListener(): Promise<() => void> {
+    if (!isTauri) return () => {};
+    try {
+      const { listen } = await import('@tauri-apps/api/event');
+      console.log('[Plugin] 开始监听插件选择事件');
+      const unlisten = await listen<string>(PLUGIN_SELECTED_EVENT, (event) => {
+        const newPluginId = event.payload;
+        console.log('[Plugin] 收到插件选择事件:', newPluginId, '当前:', selectedPluginId.value);
+        if (selectedPluginId.value !== newPluginId) {
+          console.log('[Plugin] 更新选中插件:', newPluginId);
+          selectedPluginId.value = newPluginId;
+        }
+      });
+      return unlisten;
+    } catch (e) {
+      console.warn('[Plugin] 监听插件选择失败:', e);
+      return () => {};
+    }
+  }
+
+  // 恢复插件启用状态
+  async function restoreEnabledPlugins(): Promise<void> {
+    const settings = await storageService.getAppSettings();
+    const savedEnabledIds = settings.enabledPlugins || [];
+
+    // 根据持久化的状态恢复插件启用
+    for (const plugin of plugins.value) {
+      const shouldBeEnabled = savedEnabledIds.includes(plugin.id);
+      if (shouldBeEnabled && !plugin.enabled) {
+        // 需要启用
+        try {
+          const result = await safeInvoke<Result>('plugin_enable', { id: plugin.id });
+          if (result.success) {
+            plugin.enabled = true;
+          }
+        } catch (e) {
+          console.warn(`恢复插件启用状态失败: ${plugin.id}`, e);
+        }
+      } else if (!shouldBeEnabled && plugin.enabled) {
+        // 需要禁用
+        try {
+          const result = await safeInvoke<Result>('plugin_disable', { id: plugin.id });
+          if (result.success) {
+            plugin.enabled = false;
+          }
+        } catch (e) {
+          console.warn(`恢复插件禁用状态失败: ${plugin.id}`, e);
+        }
+      }
+    }
+  }
+
+  // 恢复插件配置（从持久化存储同步到后端）
+  async function restorePluginConfigs(): Promise<void> {
+    for (const plugin of plugins.value) {
+      try {
+        const savedConfig = await storageService.getPluginConfig<Record<string, unknown>>(plugin.id);
+        if (savedConfig && Object.keys(savedConfig).length > 0) {
+          // 同步配置到后端内存
+          await safeInvoke<Result>('set_plugin_config', { id: plugin.id, config: savedConfig });
+          console.info(`[Plugin] 已恢复插件配置: ${plugin.id}`);
+        }
+      } catch (e) {
+        console.warn(`恢复插件配置失败: ${plugin.id}`, e);
+      }
+    }
+  }
+
   // 初始化
   async function init(): Promise<void> {
-    await Promise.all([
-      fetchPlugins(),
-      fetchAllData(),
-      fetchAllHealth(),
-    ]);
+    // 1. 先获取插件列表
+    await fetchPlugins();
+    // 2. 恢复持久化的启用状态
+    await restoreEnabledPlugins();
+    // 3. 恢复插件配置（从本地存储同步到后端）
+    await restorePluginConfigs();
+    // 4. 恢复持久化的选中插件 ID
+    const savedPluginId = await storageService.get<string>(STORAGE_KEYS.SELECTED_PLUGIN_ID);
+    const enabledDataPlugins = plugins.value.filter(p => p.enabled && p.dataType);
+    if (savedPluginId && enabledDataPlugins.some(p => p.id === savedPluginId)) {
+      // 恢复持久化的选择
+      selectedPluginId.value = savedPluginId;
+    } else if (!selectedPluginId.value) {
+      // 默认选中第一个有数据类型的启用插件
+      const firstPlugin = enabledDataPlugins[0];
+      if (firstPlugin) {
+        selectedPluginId.value = firstPlugin.id;
+      }
+    }
+    // 5. 只获取健康状态（数据按需加载）
+    await fetchAllHealth();
+    // 6. 按需加载选中插件的数据
+    if (selectedPluginId.value && !pluginData.value.has(selectedPluginId.value)) {
+      await refreshPlugin(selectedPluginId.value, false);
+    }
+    // 7. 监听其他窗口的插件选择
+    await setupPluginSelectionListener();
   }
 
   // ============================================================================
@@ -461,6 +612,11 @@ export const usePluginStore = defineStore('plugin', () => {
         const newPlugin = result.data;
         if (!plugins.value.some(p => p.id === newPlugin.id)) {
           plugins.value.push(newPlugin);
+        }
+
+        // 持久化启用状态（如果新安装的插件是启用的）
+        if (newPlugin.enabled) {
+          await persistEnabledPlugins();
         }
 
         // 设置成功状态
@@ -540,6 +696,7 @@ export const usePluginStore = defineStore('plugin', () => {
     isLoading,
     isRefreshing,
     error,
+    selectedPluginId,
     // 安装状态
     installingPlugins,
     installErrors,
@@ -550,6 +707,8 @@ export const usePluginStore = defineStore('plugin', () => {
     healthyPlugins,
     totalCalls,
     systemHealthRate,
+    selectedPluginData,
+    selectedPluginHealth,
     // 方法
     fetchPlugins,
     fetchAllData,
@@ -566,6 +725,8 @@ export const usePluginStore = defineStore('plugin', () => {
     checkUpdates,
     updatePlugin,
     init,
+    selectPlugin,
+    setupPluginSelectionListener,
     // 安装方法
     isInstalled,
     getInstallStatus,

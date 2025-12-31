@@ -11,8 +11,64 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use std::collections::HashMap;
+
 use futures::StreamExt;
-use rquickjs::{class::Trace, Class, Ctx, Exception, Function, Result as JsResult};
+use rquickjs::{
+    class::Trace, function::Async, function::Opt, Class, Ctx, FromJs, Function, IntoJs, Object,
+    Result as JsResult, Value,
+};
+
+// ============================================================================
+// Fetch Options 结构体
+// ============================================================================
+
+/// Fetch 请求选项
+#[derive(Debug, Clone, Default)]
+pub struct FetchOptions {
+    /// HTTP 方法（GET, POST, PUT, DELETE 等）
+    pub method: Option<String>,
+    /// 请求头
+    pub headers: HashMap<String, String>,
+    /// 请求体
+    pub body: Option<String>,
+}
+
+impl<'js> FromJs<'js> for FetchOptions {
+    fn from_js(ctx: &Ctx<'js>, value: Value<'js>) -> JsResult<Self> {
+        if value.is_undefined() || value.is_null() {
+            return Ok(Self::default());
+        }
+
+        let obj = Object::from_js(ctx, value)?;
+
+        // 解析 method
+        let method: Option<String> = obj.get("method").ok();
+
+        // 解析 headers
+        let mut headers = HashMap::new();
+        if let Ok(headers_val) = obj.get::<_, Value>("headers") {
+            if !headers_val.is_undefined() && !headers_val.is_null() {
+                if let Ok(headers_obj) = Object::from_value(headers_val) {
+                    for prop in headers_obj.props::<String, String>() {
+                        if let Ok((key, val)) = prop {
+                            headers.insert(key, val);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 解析 body
+        let body: Option<String> = obj.get("body").ok();
+
+        Ok(Self {
+            method,
+            headers,
+            body,
+        })
+    }
+}
 
 // ============================================================================
 // 统一错误类型
@@ -137,14 +193,110 @@ impl FetchResult {
     }
 }
 
+// ============================================================================
+// 异步返回的数据结构（用于 Async<T> Promise 转换）
+// ============================================================================
+
+/// 用于异步 fetch 返回的数据结构
+/// 与 FetchResult 类分离，因为 Async 需要 'static 生命周期
+/// 实现 IntoJs 以便在 Promise resolve 时自动转换为 JS 对象
+#[derive(Debug, Clone)]
+struct FetchResultData {
+    url: String,
+    method: String,
+    ok: bool,
+    status: u16,
+    body: String,
+}
+
+impl<'js> IntoJs<'js> for FetchResultData {
+    fn into_js(self, ctx: &Ctx<'js>) -> JsResult<Value<'js>> {
+        let obj = Object::new(ctx.clone())?;
+
+        // 设置基础属性
+        obj.set("url", self.url.clone())?;
+        obj.set("method", self.method.clone())?;
+        obj.set("ok", self.ok)?;
+        obj.set("status", self.status)?;
+        obj.set("_body", self.body.clone())?;
+
+        // text() 方法
+        let body_for_text = self.body.clone();
+        obj.set(
+            "text",
+            Function::new(ctx.clone(), move || -> JsResult<String> {
+                Ok(body_for_text.clone())
+            })?,
+        )?;
+
+        // json() 方法 - 使用 serde_json 解析
+        obj.set(
+            "json",
+            Function::new(
+                ctx.clone(),
+                |ctx: Ctx<'js>, this: rquickjs::function::This<Object<'js>>| -> JsResult<Value<'js>> {
+                    let body: String = this.0.get("_body")?;
+                    let clean_body = body
+                        .trim_start_matches('\u{FEFF}')
+                        .trim();
+
+                    let json_value: serde_json::Value = serde_json::from_str(clean_body)
+                        .map_err(|e| rquickjs::Error::new_from_js_message("json", "object", &format!("JSON parse error: {}", e)))?;
+
+                    serde_json_to_js(&ctx, &json_value)
+                },
+            )?,
+        )?;
+
+        Ok(obj.into_value())
+    }
+}
+
+/// 将 serde_json::Value 转换为 rquickjs::Value
+fn serde_json_to_js<'js>(ctx: &Ctx<'js>, value: &serde_json::Value) -> JsResult<Value<'js>> {
+    match value {
+        serde_json::Value::Null => Ok(Value::new_null(ctx.clone())),
+        serde_json::Value::Bool(b) => Ok(Value::new_bool(ctx.clone(), *b)),
+        serde_json::Value::Number(n) => {
+            if let Some(i) = n.as_i64() {
+                Ok(Value::new_int(ctx.clone(), i as i32))
+            } else if let Some(f) = n.as_f64() {
+                Ok(Value::new_float(ctx.clone(), f))
+            } else {
+                Ok(Value::new_float(ctx.clone(), 0.0))
+            }
+        }
+        serde_json::Value::String(s) => {
+            rquickjs::String::from_str(ctx.clone(), s)
+                .map(|s| s.into_value())
+        }
+        serde_json::Value::Array(arr) => {
+            let js_arr = rquickjs::Array::new(ctx.clone())?;
+            for (i, item) in arr.iter().enumerate() {
+                let js_val = serde_json_to_js(ctx, item)?;
+                js_arr.set(i, js_val)?;
+            }
+            Ok(js_arr.into_value())
+        }
+        serde_json::Value::Object(map) => {
+            let js_obj = Object::new(ctx.clone())?;
+            for (k, v) in map {
+                let js_val = serde_json_to_js(ctx, v)?;
+                js_obj.set(k.as_str(), js_val)?;
+            }
+            Ok(js_obj.into_value())
+        }
+    }
+}
+
 /// Fetch API
 pub struct FetchApi;
 
 impl FetchApi {
     /// 向上下文注入异步 fetch 函数
     ///
-    /// 使用 Promise::new + ctx.spawn 模式实现真正的异步 fetch
-    /// JS 端调用 fetch(url) 返回 Promise，resolve 为 FetchResult 对象
+    /// 使用 rquickjs 的 Async<T> 包装器实现真正的异步 fetch
+    /// JS 端调用 fetch(url) 返回 Promise，resolve 为包含响应数据的对象
     ///
     /// # 安全特性
     /// 调用 secure_fetch，包含完整的安全检查：
@@ -152,36 +304,86 @@ impl FetchApi {
     /// - DNS rebinding 防护（resolve API 固定 IP）
     /// - 并发限制（RAII Guard）
     /// - 响应大小限制（流式读取）
+    ///
+    /// # 实现说明
+    /// 使用 `Async<Fn>` 包装器：
+    /// - 闭包返回 Future，rquickjs 自动转换为 JS Promise
+    /// - Future 完成时 Promise resolve/reject
+    /// - 需要 runtime 正确处理 pending jobs（调用 idle()）
     pub fn inject(ctx: &Ctx<'_>, manager: Arc<RequestManager>) -> JsResult<()> {
         let globals = ctx.globals();
 
-        // 注册 FetchResult 类
+        // 注册 FetchResult 类（保留用于类型文档和向后兼容）
         Class::<FetchResult>::define(&globals)?;
 
-        // 注入 fetch 函数
-        // 当前状态：抛出明确错误，避免虚假安全感
-        // TODO: 异步 Promise 集成待解决（rquickjs 0.6 生命周期限制）
-        // 目标实现：Promise::new + ctx.spawn + resolve/reject.call
-        let _manager = manager; // 保留参数供后续集成
+        // 克隆 manager 用于闭包捕获
+        let manager_for_fetch = manager.clone();
+
+        // 注入异步 fetch 函数
+        // Async<Fn> 要求：Fn(params) -> Future<Output = R>，R: IntoJs
+        // 支持 fetch(url) 和 fetch(url, options) 两种调用方式
         globals.set(
             "fetch",
-            Function::new(ctx.clone(), |ctx: Ctx<'_>, url: String| -> JsResult<()> {
-                // 同步验证 URL（安全检查仍然执行）
-                if let Err(e) = UrlSecurityChecker::check_url(&url) {
-                    return Err(Exception::throw_type(&ctx, &e.to_string()));
-                }
+            Function::new(
+                ctx.clone(),
+                Async(move |url: String, options: Opt<FetchOptions>| {
+                    // 克隆 Arc 用于异步任务（每次调用创建新的 clone）
+                    let manager = manager_for_fetch.clone();
+                    let url_owned = url;
+                    let opts = options.0.unwrap_or_default();
 
-                // 抛出明确错误而非返回占位符
-                // 避免开发者误以为 fetch 已经实现
-                log::warn!("Fetch API 调用被拒绝（异步集成未完成）: {}", url);
-                Err(Exception::throw_type(
-                    &ctx,
-                    "fetch() is not yet available. Async Promise integration pending (requires rquickjs 0.10+)",
-                ))
-            })?,
+                    // 返回 Future，rquickjs 自动包装为 Promise
+                    async move {
+                        // 1. URL 安全检查（在异步任务内执行）
+                        if let Err(e) = UrlSecurityChecker::check_url(&url_owned) {
+                            log::warn!("Fetch API URL 检查失败: {} -> {}", url_owned, e);
+                            // 返回包含错误信息的结果对象（模拟 fetch 失败但不抛异常）
+                            return FetchResultData {
+                                url: url_owned,
+                                method: opts.method.clone().unwrap_or_else(|| "GET".to_string()),
+                                ok: false,
+                                status: 0,
+                                body: format!("URL validation failed: {}", e),
+                            };
+                        }
+
+                        let method = opts.method.clone().unwrap_or_else(|| "GET".to_string());
+                        log::debug!("Fetch API 开始异步请求: {} {}", method, url_owned);
+
+                        // 2. 执行安全的异步 fetch（带 options）
+                        match Self::secure_fetch_with_options(&manager, &url_owned, &opts).await {
+                            Ok(result) => {
+                                log::debug!(
+                                    "Fetch API 请求成功: {} -> status {}",
+                                    url_owned,
+                                    result.status
+                                );
+                                FetchResultData {
+                                    url: result.url,
+                                    method: result.method,
+                                    ok: result.ok,
+                                    status: result.status,
+                                    body: result.body,
+                                }
+                            }
+                            Err(e) => {
+                                log::warn!("Fetch API 请求失败: {} -> {}", url_owned, e);
+                                // 返回包含错误信息的结果对象
+                                FetchResultData {
+                                    url: url_owned,
+                                    method,
+                                    ok: false,
+                                    status: 0,
+                                    body: format!("Fetch error: {}", e),
+                                }
+                            }
+                        }
+                    }
+                }),
+            )?,
         )?;
 
-        log::debug!("Fetch API 已注入（抛出错误模式，异步集成待完成）");
+        log::debug!("Fetch API 已注入（异步 Promise 模式）");
         Ok(())
     }
 
@@ -240,6 +442,126 @@ impl FetchApi {
         ))
     }
 
+    /// 带 options 的安全 fetch 实现
+    ///
+    /// 支持自定义 HTTP 方法、请求头和请求体
+    pub async fn secure_fetch_with_options(
+        manager: &RequestManager,
+        url_str: &str,
+        options: &FetchOptions,
+    ) -> Result<FetchResult, FetchError> {
+        // 1. URL 模式检查（同步，快速失败）
+        let parsed_url = UrlSecurityChecker::check_url(url_str)?;
+
+        // 2. 使用 RAII 守卫获取请求槽位
+        let _guard = RequestGuard::acquire(manager)?;
+
+        // 3. DNS 解析后检查
+        let resolved_ip = UrlSecurityChecker::check_resolved_ip(&parsed_url).await?;
+
+        // 4. 执行实际的 fetch 请求
+        let method = options.method.clone().unwrap_or_else(|| "GET".to_string());
+        let (ok, status, body) = Self::do_fetch_with_options(
+            &parsed_url,
+            resolved_ip,
+            options,
+            manager.max_response_size(),
+        )
+        .await?;
+
+        Ok(FetchResult::new(url_str.to_string(), method, ok, status, body))
+    }
+
+    /// 使用 options 和预解析 IP 的 fetch 实现
+    async fn do_fetch_with_options(
+        parsed_url: &url::Url,
+        resolved_addr: Option<std::net::SocketAddr>,
+        options: &FetchOptions,
+        max_size: usize,
+    ) -> Result<(bool, u16, String), FetchError> {
+        let host = parsed_url.host_str().unwrap_or_default();
+
+        let addr = resolved_addr
+            .ok_or_else(|| FetchError::DnsError("No resolved IP address available".to_string()))?;
+
+        // 创建 Client
+        let client = reqwest::Client::builder()
+            .timeout(DEFAULT_TIMEOUT)
+            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+            .redirect(reqwest::redirect::Policy::none())
+            .no_proxy()
+            .resolve(host, addr)
+            .build()
+            .map_err(|e| FetchError::NetworkError(format!("Failed to create client: {}", e)))?;
+
+        // 构建请求
+        let method_str = options.method.as_deref().unwrap_or("GET").to_uppercase();
+        let method = reqwest::Method::from_bytes(method_str.as_bytes())
+            .unwrap_or(reqwest::Method::GET);
+
+        let mut request = client.request(method, parsed_url.as_str());
+
+        // 添加请求头
+        for (key, value) in &options.headers {
+            request = request.header(key.as_str(), value.as_str());
+        }
+
+        // 添加请求体
+        if let Some(body) = &options.body {
+            request = request.body(body.clone());
+        }
+
+        // 发送请求
+        let response = request
+            .send()
+            .await
+            .map_err(|e| FetchError::NetworkError(e.to_string()))?;
+
+        let status = response.status().as_u16();
+        let ok = response.status().is_success();
+
+        // 检查 Content-Length
+        if let Some(content_length) = response.content_length() {
+            let len_usize = usize::try_from(content_length)
+                .map_err(|_| FetchError::ContentLengthOverflow(content_length))?;
+
+            if len_usize > max_size {
+                return Err(FetchError::ResponseTooLarge {
+                    size: len_usize,
+                    max: max_size,
+                });
+            }
+        }
+
+        // 流式读取
+        let mut stream = response.bytes_stream();
+        let mut body_bytes = Vec::with_capacity(max_size.min(64 * 1024));
+        let mut total_size: usize = 0;
+
+        while let Some(chunk_result) = stream.next().await {
+            let chunk = chunk_result.map_err(|e| FetchError::ReadError(e.to_string()))?;
+
+            total_size = total_size.checked_add(chunk.len()).ok_or_else(|| {
+                FetchError::ResponseTooLarge {
+                    size: usize::MAX,
+                    max: max_size,
+                }
+            })?;
+
+            if total_size > max_size {
+                return Err(FetchError::ResponseTooLarge {
+                    size: total_size,
+                    max: max_size,
+                });
+            }
+
+            body_bytes.extend_from_slice(&chunk);
+        }
+
+        let body = String::from_utf8_lossy(&body_bytes).into_owned();
+        Ok((ok, status, body))
+    }
+
     /// 使用预解析 IP 的 fetch 实现，消除 DNS TOCTOU 窗口
     ///
     /// 通过 reqwest 的 resolve API 强制使用预先验证过的 IP 地址，
@@ -262,6 +584,7 @@ impl FetchApi {
         // 这确保 reqwest 使用我们验证过的 IP，而不是重新解析 DNS
         let client = reqwest::Client::builder()
             .timeout(DEFAULT_TIMEOUT)
+            .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
             .redirect(reqwest::redirect::Policy::none())
             .no_proxy()
             .resolve(host, addr)

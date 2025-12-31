@@ -46,9 +46,9 @@ impl WindowType {
             WindowType::Popup => WindowConfig {
                 label: "main",
                 title: "CUK",
-                url: "/",
-                width: 360.0,
-                height: 480.0,
+                url: "/home",
+                width: 300.0,
+                height: 360.0,
                 resizable: false,
                 decorations: false,
                 transparent: true,

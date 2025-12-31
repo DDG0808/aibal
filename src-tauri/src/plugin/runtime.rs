@@ -27,8 +27,8 @@ use crate::plugin::sandbox::{RequestManager, SandboxApiInitializer, TimerApi, Ti
 /// 默认内存限制: 16MB
 pub const DEFAULT_MEMORY_LIMIT: usize = 16 * 1024 * 1024;
 
-/// 默认栈大小限制: 512KB
-pub const DEFAULT_STACK_SIZE: usize = 512 * 1024;
+/// 默认栈大小限制: 2MB (512KB 在异步 fetch + JSON.parse 时会栈溢出)
+pub const DEFAULT_STACK_SIZE: usize = 2 * 1024 * 1024;
 
 /// 默认执行超时: 30 秒
 pub const DEFAULT_EXECUTION_TIMEOUT: Duration = Duration::from_secs(30);
@@ -397,6 +397,61 @@ impl SandboxRuntime {
         result.map_err(RuntimeError::JsExecution)
     }
 
+    /// 带资源限制的异步执行入口（支持 Promise）
+    ///
+    /// 此方法在执行完初始代码后，会等待所有异步 Promise 完成。
+    /// 适用于调用返回 Promise 的 API（如 fetch）的场景。
+    ///
+    /// # 示例
+    /// ```ignore
+    /// let result = runtime.run_with_limits_async(&ctx, |ctx| {
+    ///     ctx.eval::<rquickjs::Value, _>("fetch('https://example.com').then(r => r.text())")
+    /// }).await?;
+    /// ```
+    ///
+    /// # 与 run_with_limits 的区别
+    /// - `run_with_limits`: 执行同步代码后立即返回
+    /// - `run_with_limits_async`: 执行后等待所有 pending Promise 完成
+    pub async fn run_with_limits_async<F, R>(
+        &self,
+        context: &AsyncContext,
+        f: F,
+    ) -> Result<R, RuntimeError>
+    where
+        F: for<'js> FnOnce(rquickjs::Ctx<'js>) -> rquickjs::Result<R> + Send,
+        R: Send,
+    {
+        // 1. 启动 Watchdog
+        let mut watchdog = Watchdog::new(self.interrupt_controller.clone());
+        watchdog.start(self.config.execution_timeout);
+
+        // 2. 开始计时
+        self.start_execution();
+
+        // 3. 执行代码
+        let result = context.with(f).await;
+
+        // 4. 等待所有异步任务完成（关键步骤！）
+        // 这会处理所有 pending 的 Promise，直到没有更多的 jobs
+        self.runtime.idle().await;
+
+        // 5. 停止 Watchdog
+        watchdog.stop();
+
+        // 6. 先缓存中断状态，再重置
+        let was_interrupted = self.interrupt_controller.interrupted.load(Ordering::SeqCst);
+
+        // 7. 重置状态
+        self.reset();
+
+        // 8. 检查是否是超时中断
+        if was_interrupted {
+            return Err(RuntimeError::ExecutionTimeout(self.config.execution_timeout));
+        }
+
+        result.map_err(RuntimeError::JsExecution)
+    }
+
     /// 带自定义超时的执行入口
     pub async fn run_with_timeout<F, R>(
         &self,
@@ -620,6 +675,10 @@ impl PluginExecutor {
     /// 3. 启用超时保护（Watchdog + interrupt_handler）
     /// 4. 内存限制生效
     ///
+    /// # 异步 Promise 支持
+    /// 当插件有 fetch/network 权限时，自动使用 `run_with_limits_async`
+    /// 等待所有异步 Promise 完成后再返回结果
+    ///
     /// # 参数
     /// - `code`: 要执行的 JS 代码
     /// - `permissions`: 插件权限列表
@@ -642,23 +701,112 @@ impl PluginExecutor {
             )
             .await?;
 
-        // 2. 使用 run_with_limits 执行代码（启用超时保护）
-        let code_owned = code.to_string();
-        let json_str: String = self
-            .runtime
-            .run_with_limits(&ctx, move |js_ctx| -> rquickjs::Result<String> {
-                // 执行插件代码
-                let result: rquickjs::Value = js_ctx.eval(code_owned.as_bytes().to_vec())?;
+        // 2. 检查是否需要异步执行（有 fetch/network 权限时需要等待 Promise）
+        let needs_async = permissions.iter().any(|p| p == "fetch" || p == "network");
 
-                // 序列化结果为 JSON 字符串
+        // 3. 根据是否需要异步执行选择执行方法
+        let code_owned = code.to_string();
+        let json_str: String = if needs_async {
+            // 使用异步执行方式：
+            // 1. 先初始化全局变量
+            // 2. 执行插件代码获取 Promise
+            // 3. 等待 Promise 完成
+            // 4. 获取结果
+
+            // 第一步：初始化全局变量
+            ctx.with(|js_ctx| -> rquickjs::Result<()> {
+                js_ctx.eval::<(), _>(b"globalThis.__asyncResult = null; globalThis.__asyncError = null; globalThis.__asyncDone = false;".to_vec())?;
+                Ok(())
+            }).await?;
+
+            // 第二步：执行插件代码获取 Promise
+            let exec_result = self.runtime
+                .run_with_limits(&ctx, move |js_ctx| -> rquickjs::Result<()> {
+                    // 执行插件代码
+                    let result: rquickjs::Value = match js_ctx.eval(code_owned.as_bytes().to_vec()) {
+                        Ok(v) => v,
+                        Err(e) => {
+                            if let Some(exc) = js_ctx.catch().as_exception() {
+                                log::error!("JS 异常消息: {}", exc.message().unwrap_or_default());
+                                if let Some(stack) = exc.stack() {
+                                    log::error!("JS 异常堆栈: {}", stack);
+                                }
+                            }
+                            return Err(e);
+                        }
+                    };
+
+                    // 把结果保存到全局变量，让 JS 处理 Promise
+                    let globals = js_ctx.globals();
+                    globals.set("__rawResult", result)?;
+
+                    // 用 JS 代码检查并处理 Promise
+                    js_ctx.eval::<(), _>(br#"
+                        if (globalThis.__rawResult && typeof globalThis.__rawResult.then === 'function') {
+                            globalThis.__rawResult.then(
+                                function(v) { globalThis.__asyncResult = v; globalThis.__asyncDone = true; },
+                                function(e) { globalThis.__asyncError = e; globalThis.__asyncDone = true; }
+                            );
+                        } else {
+                            globalThis.__asyncResult = globalThis.__rawResult;
+                            globalThis.__asyncDone = true;
+                        }
+                    "#.to_vec())?;
+
+                    Ok(())
+                })
+                .await;
+
+            if let Err(e) = exec_result {
+                log::error!("插件代码执行失败: {:?}", e);
+                return Err(e);
+            }
+
+            // 第三步：等待所有异步任务完成
+            self.runtime.runtime.idle().await;
+
+            // 第四步：获取异步结果
+            ctx.with(|js_ctx| -> rquickjs::Result<String> {
+                // 检查是否有错误
+                let error: rquickjs::Value = js_ctx.eval(b"globalThis.__asyncError".to_vec())?;
+                if !error.is_null() && !error.is_undefined() {
+                    let err_str = if let Some(obj) = error.as_object() {
+                        obj.get::<_, String>("message")
+                            .or_else(|_| obj.get::<_, String>("msg"))
+                            .unwrap_or_else(|_| {
+                                js_ctx.json_stringify(error.clone())
+                                    .ok()
+                                    .flatten()
+                                    .and_then(|s| s.to_string().ok())
+                                    .unwrap_or_else(|| "Unknown error".to_string())
+                            })
+                    } else {
+                        format!("{:?}", error)
+                    };
+                    return Err(rquickjs::Exception::throw_message(&js_ctx, &err_str));
+                }
+
+                // 获取结果
+                let result: rquickjs::Value = js_ctx.eval(b"globalThis.__asyncResult".to_vec())?;
                 match js_ctx.json_stringify(result)? {
                     Some(s) => Ok(s.to_string()?),
                     None => Ok("null".to_string()),
                 }
-            })
-            .await?;
+            }).await?
+        } else {
+            // 同步执行，不等待异步 Promise
+            self.runtime
+                .run_with_limits(&ctx, move |js_ctx| -> rquickjs::Result<String> {
+                    let result: rquickjs::Value = js_ctx.eval(code_owned.as_bytes().to_vec())?;
+                    match js_ctx.json_stringify(result)? {
+                        Some(s) => Ok(s.to_string()?),
+                        None => Ok("null".to_string()),
+                    }
+                })
+                .await?
+        };
 
-        // 3. 解析 JSON 字符串
+        // 4. 解析 JSON 字符串
         serde_json::from_str(&json_str)
             .map_err(|e| RuntimeError::RuntimeCreation(format!("JSON parse error: {}", e)))
     }

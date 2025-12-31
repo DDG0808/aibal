@@ -48,10 +48,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../views/AboutView.vue'),
     meta: { title: '关于 CUK' },
   },
-  // 旧路由兼容（重定向）
+  // 托盘弹窗页面
   {
     path: '/home',
-    redirect: '/dashboard',
+    name: 'home',
+    component: () => import('../views/HomeView.vue'),
+    meta: { title: '托盘弹窗 - CUK' },
   },
 ];
 
