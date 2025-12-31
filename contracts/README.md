@@ -1,4 +1,4 @@
-# CUK 契约定义
+# AiBal 契约定义
 
 > **版本**: 1.1.0
 > **冻结时间**: 2025-12-27
@@ -6,7 +6,7 @@
 > **状态**: FROZEN
 > **审核**: Main AI + Codex (xhigh) 评分 92/100 → **Pass** ✅
 
-本目录包含 CUK 插件系统的所有契约定义，是后续所有开发工作的基础。
+本目录包含 AiBal 插件系统的所有契约定义，是后续所有开发工作的基础。
 
 ## 目录结构
 
@@ -87,7 +87,7 @@ contracts/
 
 ```typescript
 // 安装类型定义
-// npm install @cuk/contracts
+// npm install @aibal/contracts
 
 // 导入类型
 import type {
@@ -95,7 +95,7 @@ import type {
   PluginData,
   IPCCommands,
   PluginErrorType,
-} from '@cuk/contracts';
+} from '@aibal/contracts';
 ```
 
 ### Rust 项目
