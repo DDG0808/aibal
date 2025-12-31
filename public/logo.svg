@@ -1,0 +1,123 @@
+<svg width="512" height="512" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- 背景渐变 -->
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a2e" />
+      <stop offset="100%" stop-color="#0f0f12" />
+    </linearGradient>
+
+    <!-- 极光效果 -->
+    <radialGradient id="aurora" cx="50%" cy="0%" r="80%">
+      <stop offset="0%" stop-color="#10b981" stop-opacity="0.25" />
+      <stop offset="50%" stop-color="#3b82f6" stop-opacity="0.1" />
+      <stop offset="100%" stop-color="transparent" />
+    </radialGradient>
+
+    <!-- 主渐变 (Green -> Blue -> Purple) -->
+    <linearGradient id="mainGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="50%" stop-color="#3b82f6" />
+      <stop offset="100%" stop-color="#8b5cf6" />
+    </linearGradient>
+
+    <!-- 仪表盘渐变 -->
+    <linearGradient id="meterGradient" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#10b981" />
+      <stop offset="60%" stop-color="#f59e0b" />
+      <stop offset="100%" stop-color="#ef4444" />
+    </linearGradient>
+
+    <!-- 玻璃反光 -->
+    <linearGradient id="reflection" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.2)" />
+      <stop offset="40%" stop-color="rgba(255,255,255,0)" />
+      <stop offset="100%" stop-color="rgba(255,255,255,0.08)" />
+    </linearGradient>
+
+    <!-- 外发光滤镜 -->
+    <filter id="glow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="25" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+
+    <filter id="softGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="15" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <!-- 1. 底部发光 -->
+  <rect x="100" y="100" width="824" height="824" rx="280" fill="url(#mainGradient)" opacity="0.35" filter="url(#glow)" />
+
+  <!-- 2. 主体容器 (Squircle) -->
+  <g transform="translate(58, 58) scale(0.9)">
+    <!-- 背景 -->
+    <path d="M512,1024c-136,0-184.8-1.4-245.6-13.6C186.2,994,124.6,964.4,80.6,920.4s-73.6-105.6-90-185.8C-21.4,673.8-22.8,625-22.8,512s1.4-161.8,13.6-222.6C7.4,209.2,38,147.6,82,103.6s105.6-73.6,185.8-90C328.2,1.4,377,0,512,0s183.8,1.4,244.6,13.6C836.8,29.8,898.4,59.4,942.4,103.4s73.6,105.6,90,185.8C1045.4,350.2,1046.8,399,1046.8,512s-1.4,161.8-13.6,222.6c-16.4,80.2-47,141.8-91,185.8s-105.6,73.6-185.8,90C695.8,1022.6,647,1024,512,1024z" fill="url(#bgGradient)" />
+
+    <!-- 极光层 -->
+    <path d="M512,1024c-136,0-184.8-1.4-245.6-13.6C186.2,994,124.6,964.4,80.6,920.4s-73.6-105.6-90-185.8C-21.4,673.8-22.8,625-22.8,512s1.4-161.8,13.6-222.6C7.4,209.2,38,147.6,82,103.6s105.6-73.6,185.8-90C328.2,1.4,377,0,512,0s183.8,1.4,244.6,13.6C836.8,29.8,898.4,59.4,942.4,103.4s73.6,105.6,90,185.8C1045.4,350.2,1046.8,399,1046.8,512s-1.4,161.8-13.6,222.6c-16.4,80.2-47,141.8-91,185.8s-105.6,73.6-185.8,90C695.8,1022.6,647,1024,512,1024z" fill="url(#aurora)" style="mix-blend-mode: screen;" />
+
+    <!-- 边框 -->
+    <path d="M512,1024c-136,0-184.8-1.4-245.6-13.6C186.2,994,124.6,964.4,80.6,920.4s-73.6-105.6-90-185.8C-21.4,673.8-22.8,625-22.8,512s1.4-161.8,13.6-222.6C7.4,209.2,38,147.6,82,103.6s105.6-73.6,185.8-90C328.2,1.4,377,0,512,0s183.8,1.4,244.6,13.6C836.8,29.8,898.4,59.4,942.4,103.4s73.6,105.6,90,185.8C1045.4,350.2,1046.8,399,1046.8,512s-1.4,161.8-13.6,222.6c-16.4,80.2-47,141.8-91,185.8s-105.6,73.6-185.8,90C695.8,1022.6,647,1024,512,1024z" fill="none" stroke="url(#mainGradient)" stroke-width="10" stroke-opacity="0.5" transform="scale(0.96) translate(21,21)" />
+  </g>
+
+  <!-- 3. 核心符号 (Balance Meter) - 整体放大 -->
+  <g transform="translate(512, 512) scale(1.25)">
+
+    <!-- 外圈仪表盘轨道 -->
+    <circle cx="0" cy="0" r="260" fill="none" stroke="#ffffff" stroke-width="6" stroke-opacity="0.08" />
+
+    <!-- 仪表盘刻度 (背景) -->
+    <circle cx="0" cy="0" r="260" fill="none" stroke="#ffffff" stroke-width="30" stroke-opacity="0.06"
+            stroke-dasharray="40 25" stroke-linecap="round" transform="rotate(-135)" />
+
+    <!-- 仪表盘进度条 -->
+    <circle cx="0" cy="0" r="260" fill="none" stroke="url(#meterGradient)" stroke-width="30"
+            stroke-dasharray="680 1000" stroke-linecap="round" transform="rotate(-135)"
+            filter="url(#softGlow)" opacity="0.9" />
+
+    <!-- 内圈装饰 -->
+    <circle cx="0" cy="0" r="190" fill="none" stroke="url(#mainGradient)" stroke-width="3" stroke-opacity="0.3" stroke-dasharray="15 10" />
+
+    <!-- 中心天平符号 -->
+    <g filter="url(#softGlow)" transform="scale(1.15)">
+      <!-- 天平支柱 -->
+      <rect x="-14" y="-95" width="28" height="160" rx="14" fill="url(#mainGradient)" opacity="0.9" />
+
+      <!-- 天平横杆 -->
+      <rect x="-150" y="-105" width="300" height="24" rx="12" fill="url(#mainGradient)" opacity="0.9" />
+
+      <!-- 左秤盘连接线 -->
+      <line x1="-120" y1="-81" x2="-120" y2="-10" stroke="url(#mainGradient)" stroke-width="10" stroke-linecap="round" opacity="0.8" />
+
+      <!-- 右秤盘连接线 -->
+      <line x1="120" y1="-81" x2="120" y2="-30" stroke="url(#mainGradient)" stroke-width="10" stroke-linecap="round" opacity="0.8" />
+
+      <!-- 左秤盘 (较低 - 表示已用量) -->
+      <ellipse cx="-120" cy="5" rx="70" ry="22" fill="url(#mainGradient)" opacity="0.7" />
+      <ellipse cx="-120" cy="0" rx="58" ry="16" fill="#10b981" opacity="0.5" />
+
+      <!-- 右秤盘 (较高 - 表示余额) -->
+      <ellipse cx="120" cy="-15" rx="70" ry="22" fill="url(#mainGradient)" opacity="0.7" />
+      <ellipse cx="120" cy="-20" rx="58" ry="16" fill="#3b82f6" opacity="0.5" />
+
+      <!-- 天平底座 -->
+      <path d="M-45,65 L45,65 L32,90 L-32,90 Z" fill="url(#mainGradient)" opacity="0.8" />
+      <ellipse cx="0" cy="95" rx="50" ry="14" fill="url(#mainGradient)" opacity="0.6" />
+    </g>
+
+    <!-- 装饰光点 -->
+    <circle cx="180" cy="-180" r="12" fill="#10b981" opacity="0.9" filter="url(#softGlow)" />
+    <circle cx="-180" cy="180" r="10" fill="#8b5cf6" opacity="0.9" filter="url(#softGlow)" />
+    <circle cx="200" cy="100" r="8" fill="#3b82f6" opacity="0.7" />
+    <circle cx="-150" cy="-150" r="6" fill="#f59e0b" opacity="0.6" />
+
+    <!-- AI 标识文字 -->
+    <text x="0" y="175" text-anchor="middle" font-family="SF Pro Display, -apple-system, Arial" font-size="60" font-weight="700" fill="white" opacity="0.15">Ai</text>
+  </g>
+
+  <!-- 4. 玻璃反光层 -->
+  <g transform="translate(58, 58) scale(0.9)">
+    <path d="M512,1024c-136,0-184.8-1.4-245.6-13.6C186.2,994,124.6,964.4,80.6,920.4s-73.6-105.6-90-185.8C-21.4,673.8-22.8,625-22.8,512s1.4-161.8,13.6-222.6C7.4,209.2,38,147.6,82,103.6s105.6-73.6,185.8-90C328.2,1.4,377,0,512,0s183.8,1.4,244.6,13.6C836.8,29.8,898.4,59.4,942.4,103.4s73.6,105.6,90,185.8C1045.4,350.2,1046.8,399,1046.8,512s-1.4,161.8-13.6,222.6c-16.4,80.2-47,141.8-91,185.8s-105.6,73.6-185.8,90C695.8,1022.6,647,1024,512,1024z" fill="url(#reflection)" style="mix-blend-mode: overlay;" />
+  </g>
+</svg>

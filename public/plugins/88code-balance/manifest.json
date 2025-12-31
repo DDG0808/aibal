@@ -1,0 +1,23 @@
+{
+  "id": "88code-balance",
+  "name": "88Code 订阅余额",
+  "version": "1.0.7",
+  "apiVersion": "1.0",
+  "pluginType": "data",
+  "dataType": "balance",
+  "entry": "main.js",
+  "author": "CUK Official",
+  "description": "查询 88Code 订阅套餐的额度使用情况、剩余天数和重置状态（支持按量付费模式）",
+  "icon": "8",
+  "permissions": ["fetch"],
+  "refreshIntervalMs": 300000,
+  "configSchema": {
+    "authToken": {
+      "type": "string",
+      "required": true,
+      "secret": true,
+      "label": "Authorization Token",
+      "description": "88Code 的 Authorization Token（从浏览器请求头复制完整的 Authorization 值）"
+    }
+  }
+}

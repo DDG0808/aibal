@@ -1,9 +1,60 @@
-# 密钥目录 (包含私钥，严禁提交!)
-.claude/keys/
+# 依赖目录
+node_modules/
 
-# Codex 输出
-.claude/codex-outputs/
+# 构建输出
+dist/
+src-tauri/target/
+
+# Rust 构建
+*.pdb
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# 操作系统
+.DS_Store
+Thumbs.db
+
+# 环境变量
+.env
+.env.local
+.env.*.local
+
+# 日志
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# 测试覆盖率
+coverage/
+
+# Claude AI 工作目录（个人会话数据）
+.claude/
+
+# 项目内部文档（不公开）
+docs/
+STARTUP.md
+功能清单*.md
+任务前置规划清单.md
+插件系统设计文档.md
+
+# 废弃/参考目录
+web/
+web-ui/
+Claude-Usage-Tracker-main/
 
 # 临时文件
 *.tmp
 *.bak
+*.temp
+
+# 密钥和敏感信息
+*.pem
+*.key
+
+# 插件 zip 文件
+public/plugins/*.zip

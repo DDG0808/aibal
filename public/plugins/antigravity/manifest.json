@@ -1,0 +1,44 @@
+{
+  "id": "antigravity",
+  "name": "Antigravity 配额",
+  "version": "1.0.0",
+  "apiVersion": "1.0",
+  "pluginType": "data",
+  "dataType": "balance",
+  "entry": "main.js",
+  "author": "CUK Official",
+  "description": "查询 Google Cloud Code 各模型的配额使用情况和重置时间",
+  "icon": "🚀",
+  "permissions": ["fetch"],
+  "refreshIntervalMs": 300000,
+  "configSchema": {
+    "authorization": {
+      "type": "string",
+      "required": true,
+      "secret": true,
+      "label": "Authorization",
+      "description": "Authorization Header 值"
+    },
+    "userAgent": {
+      "type": "string",
+      "required": true,
+      "secret": false,
+      "label": "User-Agent",
+      "description": "User-Agent Header 值"
+    },
+    "clientSecret": {
+      "type": "string",
+      "required": true,
+      "secret": true,
+      "label": "Client Secret",
+      "description": "client_secret Header 值"
+    },
+    "clientId": {
+      "type": "string",
+      "required": true,
+      "secret": true,
+      "label": "Client ID",
+      "description": "client_id Header 值"
+    }
+  }
+}
