@@ -127,8 +127,9 @@ const BUILTIN_REGISTRY: PluginRegistry = {
   ],
 };
 
-// 远程仓库 URL（可选，用于更新索引）
-const REMOTE_REGISTRY_URL = 'https://raw.githubusercontent.com/cuk-team/cuk-plugins/main/registry.json';
+// 远程仓库 URL（默认地址，可通过 setRegistryUrl 覆盖）
+const DEFAULT_REGISTRY_URL = 'https://raw.githubusercontent.com/DDG0808/aibal-plugins/main/registry.json';
+let customRegistryUrl: string | null = null;
 
 // Tauri 环境检测
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -170,6 +171,23 @@ class MarketplaceService {
   }
 
   /**
+   * 获取当前仓库 URL
+   */
+  getRegistryUrl(): string {
+    return customRegistryUrl || DEFAULT_REGISTRY_URL;
+  }
+
+  /**
+   * 设置自定义仓库 URL
+   * @param url 自定义 URL，传入空字符串或 null 恢复默认
+   */
+  setRegistryUrl(url: string | null): void {
+    customRegistryUrl = url && url.trim() ? url.trim() : null;
+    // 清除缓存，下次获取时会使用新 URL
+    this.lastFetchTime = 0;
+  }
+
+  /**
    * 从远程获取仓库索引
    */
   private async fetchRemoteRegistry(): Promise<void> {
@@ -177,9 +195,11 @@ class MarketplaceService {
     this.isLoading = true;
 
     try {
+      // 使用动态 URL（优先自定义，否则默认）
+      const registryUrl = this.getRegistryUrl();
       // 在 Tauri 环境中使用 fetch（需要配置 allowlist）
       // 在浏览器环境中直接使用 fetch
-      const response = await fetch(REMOTE_REGISTRY_URL, {
+      const response = await fetch(registryUrl, {
         method: 'GET',
         headers: { 'Accept': 'application/json' },
       });

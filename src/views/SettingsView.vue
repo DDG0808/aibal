@@ -8,6 +8,7 @@ import { useRoute } from 'vue-router';
 import { AppLayout } from '@/components/layout';
 import { IconBolt } from '@/components/icons';
 import { usePluginStore } from '@/stores';
+import { marketplaceService } from '@/services/marketplace';
 
 const route = useRoute();
 const pluginStore = usePluginStore();
@@ -141,6 +142,58 @@ const breadcrumbs = computed(() => [
   { label: '我的插件', path: '/plugins' },
   { label: selectedPlugin.value?.name ?? '插件配置', path: '' },
 ]);
+
+// ============================================================================
+// 市场 URL 设置
+// ============================================================================
+
+const marketplaceUrl = ref('');
+const marketplaceUrlSaving = ref(false);
+const marketplaceUrlMessage = ref<{ type: 'success' | 'error'; text: string } | null>(null);
+
+// 初始化时加载当前 URL
+onMounted(() => {
+  marketplaceUrl.value = marketplaceService.getRegistryUrl();
+});
+
+// 保存市场 URL
+async function saveMarketplaceUrl() {
+  marketplaceUrlSaving.value = true;
+  marketplaceUrlMessage.value = null;
+
+  try {
+    // 验证 URL 格式
+    if (marketplaceUrl.value.trim()) {
+      try {
+        new URL(marketplaceUrl.value.trim());
+      } catch {
+        marketplaceUrlMessage.value = { type: 'error', text: 'URL 格式无效' };
+        return;
+      }
+    }
+
+    // 设置新 URL
+    marketplaceService.setRegistryUrl(marketplaceUrl.value.trim() || null);
+    marketplaceUrlMessage.value = { type: 'success', text: '已保存，刷新市场页面生效' };
+
+    // 3 秒后清除消息
+    setTimeout(() => {
+      marketplaceUrlMessage.value = null;
+    }, 3000);
+  } finally {
+    marketplaceUrlSaving.value = false;
+  }
+}
+
+// 恢复默认 URL
+function resetMarketplaceUrl() {
+  marketplaceService.setRegistryUrl(null);
+  marketplaceUrl.value = marketplaceService.getRegistryUrl();
+  marketplaceUrlMessage.value = { type: 'success', text: '已恢复默认地址' };
+  setTimeout(() => {
+    marketplaceUrlMessage.value = null;
+  }, 3000);
+}
 </script>
 
 <template>
@@ -306,6 +359,90 @@ const breadcrumbs = computed(() => [
             @click="saveConfig"
           >
             {{ isSaving ? '保存中...' : '保存修改' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- 市场 URL 设置卡片 -->
+      <div class="config-card">
+        <div class="config-header">
+          <div
+            class="plugin-icon"
+            style="background: var(--color-accent-blue, #3b82f6);"
+          >
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+            >
+              <circle
+                cx="12"
+                cy="12"
+                r="10"
+              />
+              <line
+                x1="2"
+                y1="12"
+                x2="22"
+                y2="12"
+              />
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+            </svg>
+          </div>
+          <div class="config-title">
+            <h2>插件市场设置</h2>
+            <p>配置插件仓库索引地址</p>
+          </div>
+        </div>
+
+        <div class="config-form">
+          <!-- 状态消息 -->
+          <div
+            v-if="marketplaceUrlMessage"
+            class="status-message"
+            :class="marketplaceUrlMessage.type"
+          >
+            {{ marketplaceUrlMessage.text }}
+          </div>
+
+          <!-- 市场 URL -->
+          <div class="form-field">
+            <div class="field-header">
+              <label class="field-label">仓库 URL</label>
+              <span class="field-hint-inline">registry.json 地址</span>
+            </div>
+            <div class="field-input-wrapper">
+              <input
+                v-model="marketplaceUrl"
+                type="url"
+                class="field-input"
+                placeholder="https://example.com/registry.json"
+              >
+            </div>
+            <p class="field-hint">
+              留空使用默认地址。支持 GitHub Raw、GitLab 或自托管仓库。
+            </p>
+          </div>
+        </div>
+
+        <!-- 操作按钮 -->
+        <div class="config-actions">
+          <button
+            class="btn btn-secondary"
+            :disabled="marketplaceUrlSaving"
+            @click="resetMarketplaceUrl"
+          >
+            恢复默认
+          </button>
+          <button
+            class="btn btn-primary"
+            :disabled="marketplaceUrlSaving"
+            @click="saveMarketplaceUrl"
+          >
+            {{ marketplaceUrlSaving ? '保存中...' : '保存' }}
           </button>
         </div>
       </div>
@@ -636,5 +773,29 @@ const breadcrumbs = computed(() => [
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+
+/* 状态消息 */
+.status-message {
+  padding: var(--spacing-md);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+}
+
+.status-message.success {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: var(--color-accent-green, #22c55e);
+}
+
+.status-message.error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--color-accent-red, #ef4444);
+}
+
+.field-hint-inline {
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
 }
 </style>

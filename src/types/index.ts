@@ -152,6 +152,8 @@ export interface AppSettings {
   showInMenuBar: boolean;
   /** 主题设置 */
   theme: Theme;
+  /** 插件市场仓库 URL（可选，默认使用内置地址） */
+  marketplaceUrl?: string;
 }
 
 /**
