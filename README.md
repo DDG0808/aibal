@@ -12,6 +12,10 @@
   Track your AI API usage, quotas, and balances across multiple providers in one place.
 </p>
 
+<p align="center">
+  English | <a href="README_CN.md">简体中文</a>
+</p>
+
 ---
 
 ## Preview
