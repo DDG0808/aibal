@@ -133,12 +133,6 @@ impl PluginInstaller {
 
         log::info!("解析 manifest 成功: id={}", plugin_id);
 
-        // 6.5. 保存旧配置（如果插件已存在）
-        let old_config = self.plugin_manager.get_plugin_config(&plugin_id).await;
-        if old_config.is_some() {
-            log::info!("已保存旧配置: {}", plugin_id);
-        }
-
         // 7. 签名验证（如果不跳过）
         if !skip_signature {
             verify_manifest_signature(&manifest)
@@ -182,15 +176,6 @@ impl PluginInstaller {
             .into_iter()
             .find(|p| p.id == plugin_id)
             .ok_or_else(|| InstallError::Install(format!("插件加载后未找到: {}", plugin_id)))?;
-
-        // 12. 恢复旧配置（如果有）
-        if let Some(config) = old_config {
-            if let Err(e) = self.plugin_manager.set_plugin_config(&plugin_id, config).await {
-                log::warn!("恢复旧配置失败: {}, error={}", plugin_id, e);
-            } else {
-                log::info!("已恢复旧配置: {}", plugin_id);
-            }
-        }
 
         log::info!("插件安装成功: {} v{}", plugin_info.id, plugin_info.version);
         Ok(plugin_info)

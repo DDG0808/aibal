@@ -1,9 +1,14 @@
 // StorageService - 数据持久化服务
 // 封装 tauri-plugin-store 提供统一的存储接口
+// 支持浏览器 fallback（开发调试用）
 
-import { Store } from '@tauri-apps/plugin-store';
 import type { AppSettings } from '@/types';
 import { DEFAULT_APP_SETTINGS } from '@/types';
+
+// Tauri 环境检测
+const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+// Tauri Store 动态导入在 getStore() 中进行
 
 // ============================================================================
 // 存储键常量
@@ -26,28 +31,89 @@ export const STORAGE_KEYS = {
 // StorageService 类
 // ============================================================================
 
+// 浏览器 localStorage fallback 接口
+interface BrowserStore {
+  get<T>(key: string): Promise<T | null>;
+  set(key: string, value: unknown): Promise<void>;
+  delete(key: string): Promise<boolean>;
+  has(key: string): Promise<boolean>;
+  keys(): Promise<string[]>;
+  clear(): Promise<void>;
+  save(): Promise<void>;
+}
+
+// 浏览器 localStorage fallback 实现
+const browserStore: BrowserStore = {
+  async get<T>(key: string): Promise<T | null> {
+    const value = localStorage.getItem(key);
+    if (value === null) return null;
+    try {
+      return JSON.parse(value) as T;
+    } catch {
+      return null;
+    }
+  },
+  async set(key: string, value: unknown): Promise<void> {
+    localStorage.setItem(key, JSON.stringify(value));
+  },
+  async delete(key: string): Promise<boolean> {
+    const exists = localStorage.getItem(key) !== null;
+    localStorage.removeItem(key);
+    return exists;
+  },
+  async has(key: string): Promise<boolean> {
+    return localStorage.getItem(key) !== null;
+  },
+  async keys(): Promise<string[]> {
+    return Object.keys(localStorage);
+  },
+  async clear(): Promise<void> {
+    localStorage.clear();
+  },
+  async save(): Promise<void> {
+    // localStorage 自动持久化，无需手动保存
+  },
+};
+
 /**
  * 存储服务
  * 提供类型安全的 CRUD 操作
+ * 支持 Tauri Store 和浏览器 localStorage fallback
  */
 class StorageService {
-  private store: Store | null = null;
-  private storePromise: Promise<Store> | null = null;
+  private store: BrowserStore | null = null;
+  private storePromise: Promise<BrowserStore> | null = null;
   private readonly storePath = 'cuk-store.json';
 
   /**
    * 获取 Store 实例
    */
-  private async getStore(): Promise<Store> {
+  private async getStore(): Promise<BrowserStore> {
     if (this.store) {
       return this.store;
     }
 
     if (!this.storePromise) {
-      this.storePromise = Store.load(this.storePath).then((store) => {
-        this.store = store;
-        return store;
-      });
+      this.storePromise = (async () => {
+        // 浏览器环境使用 localStorage fallback
+        if (!isTauri) {
+          console.info('[Storage] 使用浏览器 localStorage fallback');
+          this.store = browserStore;
+          return browserStore;
+        }
+
+        // Tauri 环境使用 tauri-plugin-store
+        try {
+          const { Store } = await import('@tauri-apps/plugin-store');
+          const tauriStore = await Store.load(this.storePath);
+          this.store = tauriStore as unknown as BrowserStore;
+          return this.store;
+        } catch (e) {
+          console.warn('[Storage] Tauri Store 加载失败，使用 localStorage fallback:', e);
+          this.store = browserStore;
+          return browserStore;
+        }
+      })();
     }
 
     return this.storePromise;

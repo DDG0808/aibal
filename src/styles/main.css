@@ -28,7 +28,8 @@
   --color-border-light: #404040;
 
   /* 侧边栏 */
-  --sidebar-width: 240px;
+  --sidebar-width: 200px;
+  --sidebar-collapsed-width: 64px;
   --sidebar-bg: #1e1e1e;
   --sidebar-item-hover: #2a2a2a;
   --sidebar-item-active: #2a2a2a;
@@ -54,11 +55,38 @@
   /* 过渡 */
   --transition-fast: 0.15s ease;
   --transition-normal: 0.25s ease;
+
+  /* 响应式断点 (用于 JS 参考，CSS 使用 @media 查询) */
+  --breakpoint-sm: 640px;
+  --breakpoint-md: 768px;
+  --breakpoint-lg: 1024px;
+  --breakpoint-xl: 1280px;
 }
 
-/* 浅色模式 */
+/* 浅色主题变量 */
+.theme-light,
+:root.theme-light {
+  --color-bg: #f5f5f5;
+  --color-bg-secondary: #ffffff;
+  --color-bg-tertiary: #fafafa;
+  --color-bg-card: #ffffff;
+  --color-bg-hover: #f0f0f0;
+  --color-text: #1a1a1a;
+  --color-text-secondary: #666666;
+  --color-text-tertiary: #999999;
+  --color-border: #e5e5e5;
+  --color-border-light: #d0d0d0;
+  --sidebar-bg: #ffffff;
+  --sidebar-item-hover: #f5f5f5;
+  --sidebar-item-active: #f0f0f0;
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.05);
+  --shadow-md: 0 4px 6px rgba(0, 0, 0, 0.1);
+  --shadow-lg: 0 10px 15px rgba(0, 0, 0, 0.1);
+}
+
+/* 系统偏好：浅色模式（仅当未手动设置主题时生效） */
 @media (prefers-color-scheme: light) {
-  :root {
+  :root:not(.theme-dark):not(.theme-light) {
     --color-bg: #f5f5f5;
     --color-bg-secondary: #ffffff;
     --color-bg-tertiary: #fafafa;
@@ -111,4 +139,82 @@ body {
 
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-text-secondary);
+}
+
+/* ============================================
+   响应式布局工具类
+   ============================================ */
+
+/* 小屏幕 (< 640px) */
+@media (max-width: 639px) {
+  :root {
+    --sidebar-width: 0;
+  }
+
+  .hide-sm {
+    display: none !important;
+  }
+
+  .grid-cols-1-sm {
+    grid-template-columns: 1fr !important;
+  }
+}
+
+/* 中等屏幕 (640px - 1023px) */
+@media (min-width: 640px) and (max-width: 1023px) {
+  :root {
+    --sidebar-width: var(--sidebar-collapsed-width);
+  }
+
+  .hide-md {
+    display: none !important;
+  }
+
+  .grid-cols-2-md {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+}
+
+/* 大屏幕 (>= 1024px) */
+@media (min-width: 1024px) {
+  :root {
+    --sidebar-width: 200px;
+  }
+
+  .hide-lg {
+    display: none !important;
+  }
+}
+
+/* 侧边栏折叠状态 */
+.sidebar-collapsed {
+  --sidebar-width: var(--sidebar-collapsed-width);
+}
+
+.sidebar-collapsed .sidebar-text {
+  display: none;
+}
+
+.sidebar-collapsed .sidebar-logo-text {
+  display: none;
+}
+
+/* 响应式容器 */
+.container-responsive {
+  width: 100%;
+  max-width: 100%;
+  padding: var(--spacing-md);
+}
+
+@media (min-width: 640px) {
+  .container-responsive {
+    padding: var(--spacing-lg);
+  }
+}
+
+@media (min-width: 1024px) {
+  .container-responsive {
+    max-width: 900px;
+    padding: var(--spacing-xl);
+  }
 }

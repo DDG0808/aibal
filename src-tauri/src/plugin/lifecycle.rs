@@ -26,6 +26,7 @@ use crate::plugin::sandbox::PluginCallRequest;
 use crate::plugin::types::{
     DataType, HealthStatus, PluginData, PluginHealth, PluginInfo, PluginType, ValidationResult,
 };
+use chrono::Utc;
 use std::time::Instant;
 
 // ============================================================================
@@ -1712,6 +1713,329 @@ impl PluginManager {
             Ok(())
         } else {
             Err(LifecycleError::PluginLoad(format!("插件不存在: {}", id)))
+        }
+    }
+
+    // ========================================================================
+    // 插件执行（fetchData 调用）
+    // ========================================================================
+
+    /// 执行插件的 fetchData 函数获取数据
+    ///
+    /// 1. 获取插件代码和配置
+    /// 2. 转换 ES Module 为可执行代码
+    /// 3. 在沙盒中执行并调用 fetchData
+    /// 4. 返回 PluginData
+    pub async fn execute_fetch_data(&self, id: &str) -> Result<PluginData, LifecycleError> {
+        let start = std::time::Instant::now();
+
+        // 1. 获取插件信息
+        let (code, permissions, config, data_type) = {
+            let plugins = self.plugins.read().await;
+            let plugin = plugins
+                .get(id)
+                .ok_or_else(|| LifecycleError::PluginLoad(format!("插件不存在: {}", id)))?;
+
+            if !plugin.enabled {
+                return Err(LifecycleError::PluginLoad(format!("插件未启用: {}", id)));
+            }
+
+            let code = plugin.read_entry_content()?;
+            let permissions = plugin.manifest.permissions.clone();
+            let config = plugin.config.clone();
+            let data_type = plugin.manifest.data_type.clone();
+
+            (code, permissions, config, data_type)
+        };
+
+        // 2. 转换 ES Module 为可执行代码
+        let executable_code = Self::transform_esm_to_executable(&code, id, &config)?;
+
+        // 3. 创建沙盒运行时并执行
+        let result = self.execute_in_sandbox(&executable_code, &permissions).await?;
+
+        // 4. 解析结果为 PluginData
+        let plugin_data = Self::parse_fetch_result(id, result, data_type.as_deref())?;
+
+        // 5. 更新缓存和统计
+        let latency_ms = start.elapsed().as_secs_f64() * 1000.0;
+        self.set_plugin_data(id, plugin_data.clone(), latency_ms).await?;
+
+        log::info!("[{}] fetchData 执行成功, 耗时 {:.2}ms", id, latency_ms);
+        Ok(plugin_data)
+    }
+
+    /// 刷新所有启用的插件数据
+    pub async fn refresh_all_plugins(&self) -> Vec<Result<PluginData, LifecycleError>> {
+        // 获取所有启用的插件 ID
+        let enabled_ids: Vec<String> = {
+            let plugins = self.plugins.read().await;
+            plugins
+                .values()
+                .filter(|p| p.enabled)
+                .map(|p| p.id.clone())
+                .collect()
+        };
+
+        // 并发执行所有插件
+        let mut results = Vec::new();
+        for id in enabled_ids {
+            let result = self.execute_fetch_data(&id).await;
+            results.push(result);
+        }
+
+        results
+    }
+
+    /// 转换 ES Module 代码为可执行的 IIFE
+    ///
+    /// 将 `export const X = ...` 和 `export async function X` 转换为
+    /// 可以直接 eval 的代码格式
+    fn transform_esm_to_executable(
+        code: &str,
+        plugin_id: &str,
+        config: &HashMap<String, serde_json::Value>,
+    ) -> Result<String, LifecycleError> {
+        // 转换 export 语句
+        let mut transformed = code.to_string();
+
+        // 1. 转换 `export const X = ...` 为 `const X = ...; __exports.X = X;`
+        // 使用简单的字符串替换（更复杂的情况需要 AST 解析）
+        transformed = transformed.replace("export const ", "const ");
+        transformed = transformed.replace("export let ", "let ");
+        transformed = transformed.replace("export var ", "var ");
+
+        // 2. 转换 `export async function X` 为 `async function X`
+        transformed = transformed.replace("export async function ", "async function ");
+        transformed = transformed.replace("export function ", "function ");
+
+        // 3. 序列化配置
+        let config_json = serde_json::to_string(config)
+            .map_err(|e| LifecycleError::PluginLoad(format!("配置序列化失败: {}", e)))?;
+
+        // 4. 构建可执行代码
+        // 使用 IIFE 包装，注入 context，调用 fetchData
+        let executable = format!(
+            r#"(function() {{
+  var __exports = {{}};
+
+  // 注入 context 对象
+  var context = {{
+    pluginId: "{}",
+    config: {},
+    log: function(level, msg) {{
+      console.log("[" + level + "][{}] " + msg);
+    }},
+    emit: function(event, data) {{
+      console.log("[emit][{}] " + event);
+    }}
+  }};
+
+  // 插件代码开始
+  {}
+  // 插件代码结束
+
+  // 收集导出（简化版：假设标准命名）
+  if (typeof metadata !== 'undefined') __exports.metadata = metadata;
+  if (typeof fetchData !== 'undefined') __exports.fetchData = fetchData;
+  if (typeof onLoad !== 'undefined') __exports.onLoad = onLoad;
+  if (typeof onUnload !== 'undefined') __exports.onUnload = onUnload;
+  if (typeof validateConfig !== 'undefined') __exports.validateConfig = validateConfig;
+
+  // 调用 fetchData
+  if (typeof __exports.fetchData !== 'function') {{
+    throw new Error('插件未导出 fetchData 函数');
+  }}
+
+  var config = {};
+  var result = __exports.fetchData(config, context);
+
+  // 处理 Promise（如果是 async function）
+  if (result && typeof result.then === 'function') {{
+    // 同步等待 Promise（QuickJS 限制：需要 Promise 立即 resolve）
+    var resolved = null;
+    var rejected = null;
+    result.then(function(v) {{ resolved = v; }}, function(e) {{ rejected = e; }});
+    if (rejected) throw rejected;
+    return resolved;
+  }}
+
+  return result;
+}})()"#,
+            plugin_id,
+            config_json,
+            plugin_id,
+            plugin_id,
+            transformed,
+            config_json
+        );
+
+        Ok(executable)
+    }
+
+    /// 在沙盒中执行代码
+    async fn execute_in_sandbox(
+        &self,
+        code: &str,
+        permissions: &[String],
+    ) -> Result<serde_json::Value, LifecycleError> {
+        use crate::plugin::{SandboxConfig, SandboxRuntime, PluginExecutor, RequestManager};
+        use std::sync::Arc;
+
+        // 创建沙盒运行时
+        let config = SandboxConfig::default();
+        let runtime = SandboxRuntime::new(config)
+            .await
+            .map_err(|e| LifecycleError::PluginLoad(format!("创建沙盒失败: {}", e)))?;
+
+        // 创建执行器
+        let request_manager = RequestManager::new()
+            .map_err(|e| LifecycleError::PluginLoad(format!("创建 RequestManager 失败: {}", e)))?;
+        let executor = PluginExecutor::new(Arc::new(runtime))
+            .with_request_manager(Arc::new(request_manager));
+
+        // 执行代码
+        executor
+            .execute_plugin(code, permissions)
+            .await
+            .map_err(|e| LifecycleError::PluginLoad(format!("执行插件失败: {}", e)))
+    }
+
+    /// 解析 fetchData 返回的结果为 PluginData
+    fn parse_fetch_result(
+        plugin_id: &str,
+        result: serde_json::Value,
+        expected_data_type: Option<&str>,
+    ) -> Result<PluginData, LifecycleError> {
+        use crate::plugin::types::{
+            PluginDataBase, UsageData, BalanceData, StatusData, CustomData,
+        };
+
+        // 获取 dataType
+        let data_type = result
+            .get("dataType")
+            .and_then(|v| v.as_str())
+            .or(expected_data_type)
+            .ok_or_else(|| {
+                LifecycleError::PluginLoad("fetchData 返回结果缺少 dataType".to_string())
+            })?;
+
+        // 构建基础数据
+        let last_updated = result
+            .get("lastUpdated")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string())
+            .unwrap_or_else(|| Utc::now().to_rfc3339());
+
+        let base = PluginDataBase {
+            plugin_id: plugin_id.to_string(),
+            last_updated,
+        };
+
+        // 根据 dataType 解析
+        match data_type {
+            "usage" => {
+                let percentage = result.get("percentage").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let used = result.get("used").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let limit = result.get("limit").and_then(|v| v.as_f64()).unwrap_or(100.0);
+                let unit = result
+                    .get("unit")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("units")
+                    .to_string();
+                let reset_time = result.get("resetTime").and_then(|v| v.as_str()).map(|s| s.to_string());
+                let reset_label = result.get("resetLabel").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                // 解析 dimensions
+                let dimensions: Option<Vec<crate::plugin::types::UsageDimension>> = result
+                    .get("dimensions")
+                    .and_then(|v| v.as_array())
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|d| {
+                                Some(crate::plugin::types::UsageDimension {
+                                    id: d.get("id")?.as_str()?.to_string(),
+                                    label: d.get("label")?.as_str()?.to_string(),
+                                    percentage: d.get("percentage")?.as_f64()?,
+                                    used: d.get("used")?.as_f64()?,
+                                    limit: d.get("limit")?.as_f64()?,
+                                    reset_time: d.get("resetTime").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                })
+                            })
+                            .collect()
+                    });
+
+                Ok(PluginData::Usage(UsageData {
+                    base,
+                    percentage,
+                    used,
+                    limit,
+                    unit,
+                    reset_time,
+                    reset_label,
+                    dimensions,
+                }))
+            }
+            "balance" => {
+                let balance = result.get("balance").and_then(|v| v.as_f64()).unwrap_or(0.0);
+                let currency = result
+                    .get("currency")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("USD")
+                    .to_string();
+                let quota = result.get("quota").and_then(|v| v.as_f64());
+                let used_quota = result.get("usedQuota").and_then(|v| v.as_f64());
+                let expires_at = result.get("expiresAt").and_then(|v| v.as_str()).map(|s| s.to_string());
+
+                Ok(PluginData::Balance(BalanceData {
+                    base,
+                    balance,
+                    currency,
+                    quota,
+                    used_quota,
+                    expires_at,
+                }))
+            }
+            "status" => {
+                use crate::plugin::types::StatusIndicator;
+
+                // 解析 indicator
+                let indicator_str = result
+                    .get("indicator")
+                    .or_else(|| result.get("status"))
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("unknown");
+
+                let indicator = match indicator_str.to_lowercase().as_str() {
+                    "none" | "ok" | "healthy" => StatusIndicator::None,
+                    "minor" | "warning" => StatusIndicator::Minor,
+                    "major" | "error" => StatusIndicator::Major,
+                    "critical" => StatusIndicator::Critical,
+                    _ => StatusIndicator::Unknown,
+                };
+
+                let description = result
+                    .get("description")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("")
+                    .to_string();
+
+                Ok(PluginData::Status(StatusData {
+                    base,
+                    indicator,
+                    description,
+                }))
+            }
+            _ => {
+                // 自定义类型
+                Ok(PluginData::Custom(CustomData {
+                    base,
+                    render_html: result.get("renderHtml").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    payload: result.clone(),
+                    title: result.get("title").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                    subtitle: result.get("subtitle").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                }))
+            }
         }
     }
 }

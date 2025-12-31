@@ -2,12 +2,66 @@
 /**
  * Phase 8.1: 托盘弹窗主视图
  * 集成所有卡片组件，显示插件数据和状态
+ * 支持浏览器 fallback（开发调试用）
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
-import { getCurrentWindow } from '@tauri-apps/api/window';
 import { TrayHeader, UsageCard, BalanceCard, StatusCard, PluginBar } from '@/components/tray';
+
+// Tauri 环境检测
+const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
+
+// 安全的 Tauri API 调用
+async function safeInvoke<T>(cmd: string, args?: Record<string, unknown>): Promise<T> {
+  if (!isTauri) {
+    console.info(`[Mock] invoke('${cmd}')`, args);
+    return getMockResult(cmd) as T;
+  }
+  const { invoke } = await import('@tauri-apps/api/core');
+  return invoke<T>(cmd, args);
+}
+
+async function safeListen<T>(event: string, handler: (event: { payload: T }) => void): Promise<() => void> {
+  if (!isTauri) {
+    console.info(`[Mock] listen('${event}')`);
+    return () => {}; // 空的取消监听函数
+  }
+  const { listen } = await import('@tauri-apps/api/event');
+  return listen<T>(event, handler);
+}
+
+async function safeEmit(event: string, payload?: unknown): Promise<void> {
+  if (!isTauri) {
+    console.info(`[Mock] emit('${event}')`, payload);
+    return;
+  }
+  const { getCurrentWindow } = await import('@tauri-apps/api/window');
+  const currentWindow = getCurrentWindow();
+  await currentWindow.emit(event, payload);
+}
+
+// 模拟数据
+function getMockResult(cmd: string): unknown {
+  switch (cmd) {
+    case 'plugin_list':
+      return { success: true, data: [
+        { id: 'claude-usage', name: 'Claude Usage', version: '1.0.0', enabled: true, healthy: true, dataType: 'usage' },
+      ]};
+    case 'get_all_data':
+      return { success: true, data: [
+        { pluginId: 'claude-usage', dataType: 'usage', percentage: 42, used: 420, limit: 1000, unit: 'msgs', resetLabel: '1h 后重置', lastUpdated: new Date().toISOString(), dimensions: [] },
+      ]};
+    case 'get_all_health':
+      return { success: true, data: [
+        { pluginId: 'claude-usage', status: 'healthy', successRate: 0.99, lastCheck: new Date().toISOString() },
+      ]};
+    case 'refresh_all':
+      return { success: true, data: [] };
+    case 'get_version':
+      return '2.2 (Browser)';
+    default:
+      return { success: true, data: null };
+  }
+}
 import type {
   Result,
   PluginInfo,
@@ -89,10 +143,10 @@ const loadData = async () => {
   try {
     // 并行加载所有数据
     const [pluginListResult, allDataResult, allHealthResult, versionResult] = await Promise.all([
-      invoke<Result<PluginInfo[]>>('plugin_list'),
-      invoke<Result<PluginData[]>>('get_all_data'),
-      invoke<Result<PluginHealth[]>>('get_all_health'),
-      invoke<string>('get_version').catch(() => '2.2'),
+      safeInvoke<Result<PluginInfo[]>>('plugin_list'),
+      safeInvoke<Result<PluginData[]>>('get_all_data'),
+      safeInvoke<Result<PluginHealth[]>>('get_all_health'),
+      safeInvoke<string>('get_version').catch(() => '2.2'),
     ]);
 
     if (pluginListResult.success && pluginListResult.data) {
@@ -121,12 +175,12 @@ const handleRefresh = async () => {
 
   isRefreshing.value = true;
   try {
-    const result = await invoke<Result<PluginData[]>>('refresh_all', { force: true });
+    const result = await safeInvoke<Result<PluginData[]>>('refresh_all', { force: true });
     if (result.success && result.data) {
       pluginData.value = result.data;
     }
     // 重新加载健康状态
-    const healthResult = await invoke<Result<PluginHealth[]>>('get_all_health');
+    const healthResult = await safeInvoke<Result<PluginHealth[]>>('get_all_health');
     if (healthResult.success && healthResult.data) {
       pluginHealth.value = healthResult.data;
     }
@@ -142,9 +196,7 @@ const handleRefresh = async () => {
 // 打开设置窗口
 const handleSettings = async () => {
   try {
-    // 通过 Tauri 事件请求打开设置窗口
-    const currentWindow = getCurrentWindow();
-    await currentWindow.emit('open-settings');
+    await safeEmit('open-settings');
   } catch (e) {
     console.error('打开设置失败:', e);
   }
@@ -153,8 +205,7 @@ const handleSettings = async () => {
 // 管理插件
 const handleManagePlugins = async () => {
   try {
-    const currentWindow = getCurrentWindow();
-    await currentWindow.emit('open-settings', { tab: 'plugins' });
+    await safeEmit('open-settings', { tab: 'plugins' });
   } catch (e) {
     console.error('打开插件管理失败:', e);
   }
@@ -168,7 +219,7 @@ const handlePluginClick = (plugin: PluginInfo) => {
 // 监听事件
 const setupEventListeners = async () => {
   // 监听插件数据更新 (契约: PluginDataUpdatedEvent)
-  const unlistenDataUpdated = await listen<{ id: string; data: PluginData }>(
+  const unlistenDataUpdated = await safeListen<{ id: string; data: PluginData }>(
     'ipc:plugin_data_updated',
     (event) => {
       const { id, data } = event.payload;
@@ -186,7 +237,7 @@ const setupEventListeners = async () => {
   unlisteners.push(unlistenDataUpdated);
 
   // 监听健康状态变化
-  const unlistenHealthChanged = await listen<PluginHealth>(
+  const unlistenHealthChanged = await safeListen<PluginHealth>(
     'ipc:plugin_health_changed',
     (event) => {
       const health = event.payload;
@@ -229,9 +280,14 @@ onUnmounted(() => {
     <!-- 主内容区域 -->
     <main class="home-content">
       <!-- 错误提示 -->
-      <div v-if="error" class="error-banner">
+      <div
+        v-if="error"
+        class="error-banner"
+      >
         <span>{{ error }}</span>
-        <button @click="loadData">重试</button>
+        <button @click="loadData">
+          重试
+        </button>
       </div>
 
       <!-- 使用量卡片 -->
@@ -243,25 +299,27 @@ onUnmounted(() => {
         :plugin-id="usage.pluginId"
       />
 
-      <!-- 空状态: 没有使用量数据时显示示例 -->
-      <UsageCard
+      <!-- 空状态: 没有使用量数据时显示提示 -->
+      <div
         v-if="usageDataList.length === 0"
-        :data="{
-          pluginId: 'demo-usage',
-          dataType: 'usage',
-          percentage: 78,
-          used: 780,
-          limit: 1000,
-          unit: 'requests',
-          resetTime: new Date(Date.now() + 2 * 60 * 60 * 1000 + 15 * 60 * 1000).toISOString(),
-          lastUpdated: new Date().toISOString(),
-        }"
-        plugin-name="Claude Usage"
-        plugin-id="claude-usage"
-      />
+        class="empty-state"
+      >
+        <div class="empty-state-icon">
+          📊
+        </div>
+        <p class="empty-state-text">
+          暂无使用量数据
+        </p>
+        <p class="empty-state-hint">
+          请先安装并启用插件
+        </p>
+      </div>
 
       <!-- 余额卡片组 -->
-      <div v-if="balanceDataList.length > 0" class="balance-row">
+      <div
+        v-if="balanceDataList.length > 0"
+        class="balance-row"
+      >
         <BalanceCard
           v-for="(balance, index) in balanceDataList"
           :key="balance.pluginId"
@@ -272,32 +330,20 @@ onUnmounted(() => {
         />
       </div>
 
-      <!-- 空状态: 没有余额数据时显示示例 -->
-      <div v-else class="balance-row">
-        <BalanceCard
-          :data="{
-            pluginId: 'demo-openai',
-            dataType: 'balance',
-            balance: 12.45,
-            currency: 'USD',
-            lastUpdated: new Date().toISOString(),
-          }"
-          plugin-name="OpenAI API"
-          health-status="healthy"
-          color-theme="green"
-        />
-        <BalanceCard
-          :data="{
-            pluginId: 'demo-deepseek',
-            dataType: 'balance',
-            balance: 45,
-            currency: 'CNY',
-            lastUpdated: new Date().toISOString(),
-          }"
-          plugin-name="DeepSeek"
-          health-status="healthy"
-          color-theme="blue"
-        />
+      <!-- 空状态: 没有余额数据时显示提示 -->
+      <div
+        v-else
+        class="empty-state"
+      >
+        <div class="empty-state-icon">
+          💰
+        </div>
+        <p class="empty-state-text">
+          暂无余额数据
+        </p>
+        <p class="empty-state-hint">
+          安装余额类插件后将在此显示
+        </p>
       </div>
 
       <!-- 系统状态卡片 -->
@@ -309,13 +355,9 @@ onUnmounted(() => {
       />
     </main>
 
-    <!-- 底部插件栏 -->
+    <!-- 底部插件栏（使用真实数据，空时显示空状态） -->
     <PluginBar
-      :plugins="plugins.length > 0 ? plugins : [
-        { id: 'claude', name: 'Claude', version: '1.0', pluginType: 'data', enabled: true, healthy: true },
-        { id: 'openai', name: 'OpenAI', version: '1.0', pluginType: 'data', enabled: true, healthy: true },
-        { id: 'deepseek', name: 'DeepSeek', version: '1.0', pluginType: 'data', enabled: true, healthy: true },
-      ]"
+      :plugins="plugins"
       @manage="handleManagePlugins"
       @plugin-click="handlePluginClick"
     />
@@ -368,5 +410,35 @@ onUnmounted(() => {
 .balance-row {
   display: flex;
   gap: var(--spacing-md);
+}
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xl);
+  background: var(--color-bg-card);
+  border-radius: var(--radius-lg);
+  text-align: center;
+}
+
+.empty-state-icon {
+  font-size: 2rem;
+  margin-bottom: var(--spacing-sm);
+  opacity: 0.6;
+}
+
+.empty-state-text {
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--spacing-xs);
+}
+
+.empty-state-hint {
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+  margin: 0;
 }
 </style>

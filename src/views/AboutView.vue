@@ -17,13 +17,19 @@ onMounted(async () => {
 <template>
   <div class="about-view">
     <div class="about-logo">
-      <div class="logo-placeholder">CUK</div>
+      <div class="logo-placeholder">
+        CUK
+      </div>
     </div>
 
     <div class="about-info">
       <h1>CUK</h1>
-      <p class="description">Claude Usage Tracker</p>
-      <p class="version">版本 {{ version }}</p>
+      <p class="description">
+        Claude Usage Tracker
+      </p>
+      <p class="version">
+        版本 {{ version }}
+      </p>
     </div>
 
     <div class="about-details">
@@ -31,8 +37,12 @@ onMounted(async () => {
     </div>
 
     <div class="about-footer">
-      <p class="copyright">&copy; 2025 CUK Project</p>
-      <p class="license">MIT License</p>
+      <p class="copyright">
+        &copy; 2025 CUK Project
+      </p>
+      <p class="license">
+        MIT License
+      </p>
     </div>
   </div>
 </template>

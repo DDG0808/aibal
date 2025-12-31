@@ -18,8 +18,8 @@ mod tests;
 
 // 导出运行时类型
 pub use runtime::{
-    Executor, InterruptController, RuntimeError, SandboxConfig, SandboxRuntime, Watchdog,
-    DEFAULT_EXECUTION_TIMEOUT, DEFAULT_MEMORY_LIMIT, DEFAULT_STACK_SIZE,
+    Executor, InterruptController, PluginExecutor, RuntimeError, SandboxConfig, SandboxRuntime,
+    Watchdog, DEFAULT_EXECUTION_TIMEOUT, DEFAULT_MEMORY_LIMIT, DEFAULT_STACK_SIZE,
 };
 
 // 导出沙盒 API

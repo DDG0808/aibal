@@ -6,68 +6,133 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import { useRoute } from 'vue-router';
 import { AppLayout } from '@/components/layout';
-import type { PluginInfo } from '@/types';
+import { IconBolt } from '@/components/icons';
+import { usePluginStore } from '@/stores';
 
 const route = useRoute();
+const pluginStore = usePluginStore();
 
-// 模拟插件列表
-const plugins = ref<PluginInfo[]>([
-  {
-    id: 'claude-usage',
-    name: 'Claude 用量监控',
-    version: '1.2.0',
-    pluginType: 'data',
-    dataType: 'usage',
-    enabled: true,
-    healthy: true,
-    author: 'CUK Official',
-    description: '配置连接参数与监控规则',
-    icon: 'bolt',
-  },
-]);
+// 插件配置值类型（强类型约束，兼容 store/IPC 的 Record<string, unknown>）
+interface PluginConfigValues extends Record<string, unknown> {
+  sessionKey: string;
+  refreshInterval: number;
+  backgroundMonitoring: boolean;
+}
 
 // 当前选中的插件
-const selectedPluginId = ref<string>('claude-usage');
+const selectedPluginId = ref<string>('');
 
-// 插件配置
-const pluginConfig = ref<Record<string, unknown>>({
-  sessionKey: '••••••••••••••••••••••••',
+// 默认配置（用于合并，避免后端缺字段时 UI 绑定异常）
+const defaultConfig: PluginConfigValues = {
+  sessionKey: '',
   refreshInterval: 30000,
   backgroundMonitoring: true,
-});
+};
 
-// 是否有未保存的更改
+// 插件配置
+const pluginConfig = ref<PluginConfigValues>({ ...defaultConfig });
+
+// 状态
 const hasChanges = ref(false);
+const isSaving = ref(false);
+const isLoadingConfig = ref(false); // 加载配置期间忽略 watch 触发
+const validationError = ref<string | null>(null);
+const fieldErrors = ref<Record<string, string>>({});
 
-// 当前插件
+// 从 Store 获取插件列表
+const plugins = computed(() => pluginStore.plugins);
 const selectedPlugin = computed(() => plugins.value.find(p => p.id === selectedPluginId.value));
 
-// 监听配置变化
+// 监听配置变化（加载期间忽略，使用 flush: 'sync' 确保同步执行）
 watch(pluginConfig, () => {
+  if (isLoadingConfig.value) return;
   hasChanges.value = true;
-}, { deep: true });
+  validationError.value = null;
+  fieldErrors.value = {};
+}, { deep: true, flush: 'sync' });
 
-// 保存配置
+// 加载插件配置（合并默认值，避免后端缺字段时 UI 绑定异常）
+async function loadPluginConfig(pluginId: string) {
+  isLoadingConfig.value = true;
+  try {
+    const config = await pluginStore.getPluginConfig(pluginId);
+    // 合并默认值 + 后端配置，确保所有字段都有值
+    // 后端返回 Record<string, unknown>，通过默认值合并确保必填字段存在
+    pluginConfig.value = { ...defaultConfig, ...(config ?? {}) } as PluginConfigValues;
+  } finally {
+    isLoadingConfig.value = false;
+    hasChanges.value = false;
+  }
+}
+
+// 保存配置（先验证再保存）
 async function saveConfig() {
-  // TODO: 调用 IPC set_plugin_config
-  console.log('Saving config:', pluginConfig.value);
-  hasChanges.value = false;
+  if (!selectedPluginId.value) return;
+
+  isSaving.value = true;
+  validationError.value = null;
+  fieldErrors.value = {};
+
+  try {
+    // 先验证配置
+    const validation = await pluginStore.validatePluginConfig(
+      selectedPluginId.value,
+      pluginConfig.value
+    );
+
+    if (!validation.valid) {
+      validationError.value = validation.message ?? '配置验证失败';
+      fieldErrors.value = validation.fieldErrors ?? {};
+      return;
+    }
+
+    // 验证通过，保存配置
+    const success = await pluginStore.savePluginConfig(
+      selectedPluginId.value,
+      pluginConfig.value
+    );
+
+    if (success) {
+      hasChanges.value = false;
+    } else {
+      validationError.value = '保存配置失败';
+    }
+  } finally {
+    isSaving.value = false;
+  }
 }
 
 // 恢复默认
 function resetConfig() {
-  pluginConfig.value = {
-    sessionKey: '',
-    refreshInterval: 30000,
-    backgroundMonitoring: true,
-  };
+  pluginConfig.value = { ...defaultConfig };
+  validationError.value = null;
+  fieldErrors.value = {};
 }
 
-// 从路由参数加载插件
-onMounted(() => {
+// 获取字段错误（使用 Record 格式）
+function getFieldError(field: string): string | undefined {
+  return fieldErrors.value[field];
+}
+
+// 从路由参数加载插件配置
+onMounted(async () => {
+  // 确保插件列表已加载
+  if (pluginStore.plugins.length === 0) {
+    await pluginStore.fetchPlugins();
+  }
+
+  // 从路由获取插件 ID，或使用第一个插件
   const pluginId = route.query.plugin as string;
-  if (pluginId) {
+  const firstPlugin = plugins.value[0];
+  if (pluginId && plugins.value.some(p => p.id === pluginId)) {
     selectedPluginId.value = pluginId;
+  } else if (firstPlugin) {
+    selectedPluginId.value = firstPlugin.id;
+  }
+
+  // 加载配置
+  if (selectedPluginId.value) {
+    await loadPluginConfig(selectedPluginId.value);
   }
 });
 
@@ -81,28 +146,42 @@ const breadcrumbs = computed(() => [
 <template>
   <AppLayout>
     <template #title>
-      <h1>全局设置</h1>
+      <h2>全局设置</h2>
     </template>
 
     <div class="settings-page">
       <!-- 面包屑 -->
       <nav class="breadcrumbs">
-        <span v-for="(crumb, index) in breadcrumbs" :key="crumb.label">
-          <router-link v-if="crumb.path" :to="crumb.path" class="breadcrumb-link">
+        <span
+          v-for="(crumb, index) in breadcrumbs"
+          :key="crumb.label"
+        >
+          <router-link
+            v-if="crumb.path"
+            :to="crumb.path"
+            class="breadcrumb-link"
+          >
             {{ crumb.label }}
           </router-link>
-          <span v-else class="breadcrumb-current">{{ crumb.label }}</span>
-          <span v-if="index < breadcrumbs.length - 1" class="breadcrumb-separator">›</span>
+          <span
+            v-else
+            class="breadcrumb-current"
+          >{{ crumb.label }}</span>
+          <span
+            v-if="index < breadcrumbs.length - 1"
+            class="breadcrumb-separator"
+          >›</span>
         </span>
       </nav>
 
-      <!-- 配置卡片 -->
+      <!-- 插件配置卡片 -->
       <div class="config-card">
         <div class="config-header">
-          <div class="plugin-icon" style="background: var(--color-accent);">
-            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
+          <div
+            class="plugin-icon"
+            style="background: var(--color-accent);"
+          >
+            <IconBolt />
           </div>
           <div class="config-title">
             <h2>{{ selectedPlugin?.name }}配置</h2>
@@ -111,8 +190,48 @@ const breadcrumbs = computed(() => [
         </div>
 
         <div class="config-form">
+          <!-- 验证错误提示 -->
+          <div
+            v-if="validationError"
+            class="validation-error"
+          >
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+            >
+              <circle
+                cx="12"
+                cy="12"
+                r="10"
+                stroke="currentColor"
+                stroke-width="2"
+              />
+              <line
+                x1="12"
+                y1="8"
+                x2="12"
+                y2="12"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              />
+              <circle
+                cx="12"
+                cy="16"
+                r="1"
+                fill="currentColor"
+              />
+            </svg>
+            {{ validationError }}
+          </div>
+
           <!-- 会话密钥 -->
-          <div class="form-field">
+          <div
+            class="form-field"
+            :class="{ 'has-error': getFieldError('sessionKey') }"
+          >
             <div class="field-header">
               <label class="field-label">会话密钥 (Session Key)</label>
               <span class="field-required">必填</span>
@@ -126,7 +245,18 @@ const breadcrumbs = computed(() => [
               >
               <span class="field-indicator">已加密</span>
             </div>
-            <p class="field-hint">从 anthropic.com cookie 中获取的安全密钥。</p>
+            <p
+              v-if="getFieldError('sessionKey')"
+              class="field-error"
+            >
+              {{ getFieldError('sessionKey') }}
+            </p>
+            <p
+              v-else
+              class="field-hint"
+            >
+              从 anthropic.com cookie 中获取的安全密钥。
+            </p>
           </div>
 
           <!-- 刷新间隔 -->
@@ -156,22 +286,26 @@ const breadcrumbs = computed(() => [
                 v-model="pluginConfig.backgroundMonitoring"
                 type="checkbox"
               >
-              <span class="toggle-slider"></span>
+              <span class="toggle-slider" />
             </label>
           </div>
         </div>
 
         <!-- 操作按钮 -->
         <div class="config-actions">
-          <button class="btn btn-secondary" @click="resetConfig">
+          <button
+            class="btn btn-secondary"
+            :disabled="isSaving"
+            @click="resetConfig"
+          >
             恢复默认
           </button>
           <button
             class="btn btn-primary"
-            :disabled="!hasChanges"
+            :disabled="!hasChanges || isSaving"
             @click="saveConfig"
           >
-            保存修改
+            {{ isSaving ? '保存中...' : '保存修改' }}
           </button>
         </div>
       </div>
@@ -182,6 +316,9 @@ const breadcrumbs = computed(() => [
 <style scoped>
 .settings-page {
   max-width: 700px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--spacing-xl);
 }
 
 .breadcrumbs {
@@ -252,6 +389,28 @@ const breadcrumbs = computed(() => [
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xl);
+}
+
+.validation-error {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  padding: var(--spacing-md);
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  border-radius: var(--radius-md);
+  color: var(--color-accent-red);
+  font-size: 0.875rem;
+}
+
+.form-field.has-error .field-input-wrapper {
+  border: 1px solid var(--color-accent-red);
+}
+
+.field-error {
+  font-size: 0.8125rem;
+  color: var(--color-accent-red);
+  margin: 0;
 }
 
 .form-field {

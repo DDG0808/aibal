@@ -66,21 +66,59 @@ pub async fn plugin_disable(
 }
 
 /// 安装插件
+///
+/// # 参数
+/// - `source`: 插件源，支持两种格式：
+///   - URL: `https://example.com/plugin.zip`
+///   - Registry: `registry://plugin-id`
+/// - `skip_signature`: 是否跳过签名验证（默认 false）
+/// - `registry_url`: 市场 registry.json URL（用于 registry:// 协议）
 #[command]
 pub async fn plugin_install(
     app: AppHandle,
     source: String,
     skip_signature: Option<bool>,
+    registry_url: Option<String>,
     state: State<'_, PluginManagerState>,
 ) -> Result<IpcResult<PluginInfo>, String> {
-    // TODO: Phase 5A 安全验证集成后实现
-    // 成功后调用: emitter(&app).emit_plugin_installed(&plugin_info)
-    // 失败后调用: emitter(&app).emit_plugin_error(&id, &error)
-    let _ = (app, source, skip_signature, state);
-    Ok(IpcResult::err(AppError::new(
-        "NOT_IMPLEMENTED",
-        "插件安装功能尚未实现，需要 Phase 5A 安全验证集成",
-    )))
+    use crate::commands::installer::install_plugin;
+
+    let skip_sig = skip_signature.unwrap_or(false);
+    let reg_url = registry_url.as_deref();
+
+    match install_plugin(state.0.clone(), &source, skip_sig, reg_url).await {
+        Ok(plugin_info) => {
+            // 发射安装成功事件
+            if let Err(emit_err) = emitter(&app).emit_plugin_installed(&plugin_info) {
+                log::warn!(
+                    "发送插件安装事件失败: plugin={}, emit_error={}",
+                    plugin_info.id,
+                    emit_err
+                );
+            }
+            log::info!("插件安装成功: {} v{}", plugin_info.id, plugin_info.version);
+            Ok(IpcResult::ok(plugin_info))
+        }
+        Err(e) => {
+            let error: AppError = e.into();
+            // 从 source 提取 plugin_id（用于错误事件）
+            let plugin_id = if source.starts_with("registry://") {
+                source.strip_prefix("registry://").unwrap_or(&source)
+            } else {
+                &source
+            };
+            // 发射错误事件
+            if let Err(emit_err) = emitter(&app).emit_plugin_error(plugin_id, &error) {
+                log::warn!(
+                    "发送插件错误事件失败: source={}, emit_error={}",
+                    source,
+                    emit_err
+                );
+            }
+            log::error!("插件安装失败: source={}, error={}", source, error.message);
+            Ok(IpcResult::err(error))
+        }
+    }
 }
 
 /// 卸载插件
@@ -195,7 +233,8 @@ pub async fn get_plugin_data(
 }
 
 /// 刷新单个插件
-/// 注：完整的刷新需要执行插件 JS 代码，当前返回缓存数据
+///
+/// 执行插件的 fetchData 函数获取最新数据
 #[command]
 pub async fn refresh_plugin(
     app: AppHandle,
@@ -203,37 +242,62 @@ pub async fn refresh_plugin(
     _force: Option<bool>,
     state: State<'_, PluginManagerState>,
 ) -> Result<IpcResult<Option<PluginData>>, String> {
-    // 当前返回缓存数据，完整实现需要 SandboxRuntime 执行插件
-    let data = state.0.get_plugin_data(&id).await;
-    if let Some(ref d) = data {
-        if let Err(emit_err) = emitter(&app).emit_plugin_data_updated(&id, d) {
-            log::warn!("发送插件数据更新事件失败: plugin={}, emit_error={}", id, emit_err);
+    // 执行插件的 fetchData 函数
+    match state.0.execute_fetch_data(&id).await {
+        Ok(data) => {
+            // 发送数据更新事件
+            if let Err(emit_err) = emitter(&app).emit_plugin_data_updated(&id, &data) {
+                log::warn!("发送插件数据更新事件失败: plugin={}, emit_error={}", id, emit_err);
+            }
+            Ok(IpcResult::ok(Some(data)))
+        }
+        Err(e) => {
+            // 执行失败，返回缓存数据（如果有）
+            log::warn!("插件 {} 执行 fetchData 失败: {}", id, e);
+            let error = AppError::new("PLUGIN_REFRESH_FAILED", e.to_string());
+            if let Err(emit_err) = emitter(&app).emit_plugin_error(&id, &error) {
+                log::warn!("发送插件错误事件失败: plugin={}, emit_error={}", id, emit_err);
+            }
+            // 尝试返回缓存数据
+            let cached = state.0.get_plugin_data(&id).await;
+            Ok(IpcResult::ok(cached))
         }
     }
-    Ok(IpcResult::ok(data))
 }
 
 /// 刷新所有插件
-/// 注：完整的刷新需要执行插件 JS 代码，当前返回缓存数据
+///
+/// 执行所有启用插件的 fetchData 函数获取最新数据
 #[command]
 pub async fn refresh_all(
     app: AppHandle,
     _force: Option<bool>,
     state: State<'_, PluginManagerState>,
 ) -> Result<IpcResult<Vec<PluginData>>, String> {
-    // 当前返回缓存数据，完整实现需要 SandboxRuntime 执行插件
-    let data = state.0.get_all_data().await;
-    for d in &data {
-        let plugin_id = match d {
-            PluginData::Usage(u) => &u.base.plugin_id,
-            PluginData::Balance(b) => &b.base.plugin_id,
-            PluginData::Status(s) => &s.base.plugin_id,
-            PluginData::Custom(c) => &c.base.plugin_id,
-        };
-        if let Err(emit_err) = emitter(&app).emit_plugin_data_updated(plugin_id, d) {
-            log::warn!("发送插件数据更新事件失败: plugin={}, emit_error={}", plugin_id, emit_err);
+    // 执行所有插件的 fetchData 函数
+    let results = state.0.refresh_all_plugins().await;
+
+    let mut data = Vec::new();
+    for result in results {
+        match result {
+            Ok(plugin_data) => {
+                let plugin_id = match &plugin_data {
+                    PluginData::Usage(u) => &u.base.plugin_id,
+                    PluginData::Balance(b) => &b.base.plugin_id,
+                    PluginData::Status(s) => &s.base.plugin_id,
+                    PluginData::Custom(c) => &c.base.plugin_id,
+                };
+                if let Err(emit_err) = emitter(&app).emit_plugin_data_updated(plugin_id, &plugin_data) {
+                    log::warn!("发送插件数据更新事件失败: plugin={}, emit_error={}", plugin_id, emit_err);
+                }
+                data.push(plugin_data);
+            }
+            Err(e) => {
+                log::warn!("插件执行 fetchData 失败: {}", e);
+            }
         }
     }
+
     Ok(IpcResult::ok(data))
 }
 

@@ -79,14 +79,29 @@ const resetTimeDisplay = computed(() => {
       <div class="card-title-row">
         <!-- 图标 -->
         <div class="card-icon">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M3 12h4l3-9 4 18 3-9h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 24 24"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <path
+              d="M3 12h4l3-9 4 18 3-9h4"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
           </svg>
         </div>
         <span class="card-title">{{ pluginName }}</span>
       </div>
       <!-- 插件标签 -->
-      <span v-if="pluginId" class="plugin-tag">plugin:{{ pluginId }}</span>
+      <span
+        v-if="pluginId"
+        class="plugin-tag"
+      >plugin:{{ pluginId }}</span>
     </div>
 
     <div class="card-content">
@@ -104,12 +119,15 @@ const resetTimeDisplay = computed(() => {
             width: `${safePercentage}%`,
             backgroundColor: progressColor
           }"
-        ></div>
+        />
       </div>
 
       <!-- 底部信息 -->
       <div class="card-footer">
-        <span v-if="resetTimeDisplay" class="reset-time">{{ resetTimeDisplay }}</span>
+        <span
+          v-if="resetTimeDisplay"
+          class="reset-time"
+        >{{ resetTimeDisplay }}</span>
         <span
           class="traffic-status"
           :style="{ color: trafficStatus.color }"

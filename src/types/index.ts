@@ -1,6 +1,9 @@
 // 类型定义入口
 // 从 contracts 目录引用类型定义
 
+// 导入需要在本文件中使用的类型
+import type { PluginType as _PluginType, DataType as _DataType } from '@contracts/types';
+
 // 重新导出 contracts 中的所有类型
 export type {
   // Plugin Context API
@@ -147,6 +150,8 @@ export interface AppSettings {
   launchAtLogin: boolean;
   /** 显示在菜单栏 */
   showInMenuBar: boolean;
+  /** 主题设置 */
+  theme: Theme;
 }
 
 /**
@@ -158,6 +163,7 @@ export const DEFAULT_APP_SETTINGS: AppSettings = {
   refreshOnLaunch: true,
   launchAtLogin: false,
   showInMenuBar: true,
+  theme: 'system',
 };
 
 /**
@@ -181,3 +187,61 @@ export interface RefreshState {
   /** 刷新错误 */
   error: string | null;
 }
+
+// ============================================================================
+// 插件市场类型
+// ============================================================================
+
+/**
+ * 市场插件信息
+ * 复用 contracts 中的 PluginType 和 DataType 类型
+ */
+export interface MarketplacePlugin {
+  /** 插件 ID */
+  id: string;
+  /** 显示名称 */
+  name: string;
+  /** 描述 */
+  description: string;
+  /** 作者 */
+  author: string;
+  /** 版本号 */
+  version: string;
+  /** 下载次数 */
+  downloads: number;
+  /** 是否官方认证 */
+  verified: boolean;
+  /** 图标 (单字符或 URL) */
+  icon?: string;
+  /** 插件类型（复用 contracts/types/PluginType） */
+  pluginType?: _PluginType;
+  /** 数据类型（复用 contracts/types/DataType） */
+  dataType?: _DataType;
+  /** 下载地址 */
+  downloadUrl?: string;
+  /** 标签 */
+  tags?: string[];
+  /** 最后更新时间 */
+  updatedAt?: string;
+  /** 仓库地址 */
+  repository?: string;
+}
+
+/**
+ * 插件仓库索引
+ */
+export interface PluginRegistry {
+  /** 仓库版本 */
+  version: string;
+  /** 最后更新时间 */
+  lastUpdated: string;
+  /** 热门插件 ID 列表 */
+  featured: string[];
+  /** 所有插件 */
+  plugins: MarketplacePlugin[];
+}
+
+/**
+ * 安装状态
+ */
+export type InstallStatus = 'idle' | 'downloading' | 'installing' | 'success' | 'error';

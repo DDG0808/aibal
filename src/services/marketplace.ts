@@ -10,15 +10,125 @@ import type { MarketplacePlugin, PluginRegistry, PluginInfo, Result } from '@/ty
 const BUILTIN_REGISTRY: PluginRegistry = {
   version: '1.0.0',
   lastUpdated: new Date().toISOString(),
-  featured: [],
-  plugins: [],
+  featured: ['claude-usage', 'midjourney-stats', 'copilot-usage'],
+  plugins: [
+    {
+      id: 'claude-usage',
+      name: 'Claude Usage',
+      description: 'Claude API 使用量和配额监控',
+      author: 'CUK Official',
+      version: '1.0.0',
+      downloads: 25000,
+      verified: true,
+      icon: 'C',
+      pluginType: 'data',
+      dataType: 'usage',
+      tags: ['official', 'usage', 'ai'],
+      updatedAt: '2025-12-28T00:00:00Z',
+    },
+    {
+      id: 'midjourney-stats',
+      name: 'Midjourney 统计',
+      description: '追踪剩余快速模式时长和生成次数',
+      author: 'Community',
+      version: '1.0.4',
+      downloads: 12000,
+      verified: true,
+      icon: 'M',
+      pluginType: 'data',
+      dataType: 'usage',
+      tags: ['ai', 'image', 'usage'],
+      updatedAt: '2025-12-25T00:00:00Z',
+    },
+    {
+      id: 'copilot-usage',
+      name: 'Copilot 用量',
+      description: '企业席位利用率监控和统计',
+      author: 'CUK Official',
+      version: '1.0.4',
+      downloads: 8500,
+      verified: true,
+      icon: 'G',
+      pluginType: 'data',
+      dataType: 'usage',
+      tags: ['official', 'usage', 'coding'],
+      updatedAt: '2025-12-20T00:00:00Z',
+    },
+    {
+      id: 'hf-status',
+      name: 'HuggingFace 状态',
+      description: '模型托管服务状态监控',
+      author: 'Community',
+      version: '1.0.4',
+      downloads: 3200,
+      verified: false,
+      icon: 'H',
+      pluginType: 'data',
+      dataType: 'status',
+      tags: ['ai', 'status', 'hosting'],
+      updatedAt: '2025-12-15T00:00:00Z',
+    },
+    {
+      id: 'openai-balance',
+      name: 'OpenAI 余额',
+      description: 'OpenAI API 余额和用量监控',
+      author: 'Community',
+      version: '1.2.0',
+      downloads: 15000,
+      verified: true,
+      icon: 'O',
+      pluginType: 'data',
+      dataType: 'balance',
+      tags: ['ai', 'balance', 'api'],
+      updatedAt: '2025-12-22T00:00:00Z',
+    },
+    {
+      id: 'cursor-usage',
+      name: 'Cursor 用量',
+      description: 'Cursor AI 编辑器使用量追踪',
+      author: 'Community',
+      version: '0.9.0',
+      downloads: 4500,
+      verified: false,
+      icon: 'U',
+      pluginType: 'data',
+      dataType: 'usage',
+      tags: ['ai', 'coding', 'usage'],
+      updatedAt: '2025-12-18T00:00:00Z',
+    },
+    {
+      id: 'replicate-status',
+      name: 'Replicate 状态',
+      description: 'Replicate 模型运行状态',
+      author: 'Community',
+      version: '1.0.0',
+      downloads: 2100,
+      verified: false,
+      icon: 'R',
+      pluginType: 'data',
+      dataType: 'status',
+      tags: ['ai', 'status', 'model'],
+      updatedAt: '2025-12-10T00:00:00Z',
+    },
+    {
+      id: 'anthropic-balance',
+      name: 'Anthropic 余额',
+      description: 'Anthropic API 余额查询',
+      author: 'CUK Official',
+      version: '1.0.0',
+      downloads: 18000,
+      verified: true,
+      icon: 'A',
+      pluginType: 'data',
+      dataType: 'balance',
+      tags: ['official', 'balance', 'api'],
+      updatedAt: '2025-12-26T00:00:00Z',
+    },
+  ],
 };
 
-// 默认远程仓库 URL
-// 开发环境使用本地 public/registry.json，生产环境使用 GitHub
-const DEFAULT_REGISTRY_URL = import.meta.env.DEV
-  ? '/registry.json'
-  : 'https://raw.githubusercontent.com/cuk-team/cuk-plugins/main/registry.json';
+// 远程仓库 URL（可选，用于更新索引）
+const REMOTE_REGISTRY_URL = 'https://raw.githubusercontent.com/cuk-team/cuk-plugins/main/registry.json';
 
 // Tauri 环境检测
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -36,60 +146,23 @@ class MarketplaceService {
   private isLoading = false;
   private lastFetchTime: number = 0;
   private readonly CACHE_TTL = 5 * 60 * 1000; // 5 分钟缓存
-  private customRegistryUrl: string | null = null;
-
-  /**
-   * 获取当前市场 URL
-   */
-  getRegistryUrl(): string {
-    return this.customRegistryUrl || DEFAULT_REGISTRY_URL;
-  }
-
-  /**
-   * 获取默认市场 URL
-   */
-  getDefaultRegistryUrl(): string {
-    return DEFAULT_REGISTRY_URL;
-  }
-
-  /**
-   * 设置自定义市场 URL
-   * @param url 新的市场 URL，传 null 或空字符串恢复默认
-   */
-  setRegistryUrl(url: string | null): void {
-    const newUrl = url?.trim() || null;
-    if (newUrl !== this.customRegistryUrl) {
-      this.customRegistryUrl = newUrl;
-      // 清除缓存，强制下次刷新
-      this.lastFetchTime = 0;
-      console.info('[Marketplace] 市场 URL 已更新:', this.getRegistryUrl());
-    }
-  }
 
   /**
    * 获取仓库索引
-   * 首次加载等待远程数据，后续使用缓存
+   * 优先使用缓存，超时后尝试刷新
    */
   async getRegistry(forceRefresh = false): Promise<PluginRegistry> {
     const now = Date.now();
     const cacheExpired = now - this.lastFetchTime > this.CACHE_TTL;
-    const isFirstLoad = this.lastFetchTime === 0;
 
     if (!forceRefresh && !cacheExpired) {
       return this.registry;
     }
 
-    // 首次加载或强制刷新时，等待远程数据
-    if ((isFirstLoad || forceRefresh) && !this.isLoading) {
-      try {
-        await this.fetchRemoteRegistry();
-      } catch (e) {
-        console.warn('[Marketplace] 远程仓库获取失败，使用内置数据:', e);
-      }
-    } else if (!this.isLoading) {
-      // 后续刷新非阻塞
+    // 尝试从远程获取（非阻塞）
+    if (!this.isLoading) {
       this.fetchRemoteRegistry().catch(e => {
-        console.warn('[Marketplace] 远程仓库刷新失败:', e);
+        console.warn('[Marketplace] 远程仓库获取失败，使用内置数据:', e);
       });
     }
 
@@ -104,10 +177,9 @@ class MarketplaceService {
     this.isLoading = true;
 
     try {
-      const url = this.getRegistryUrl();
       // 在 Tauri 环境中使用 fetch（需要配置 allowlist）
       // 在浏览器环境中直接使用 fetch
-      const response = await fetch(url, {
+      const response = await fetch(REMOTE_REGISTRY_URL, {
         method: 'GET',
         headers: { 'Accept': 'application/json' },
       });
@@ -283,24 +355,9 @@ class MarketplaceService {
 
       // Tauri 环境调用后端（契约返回 Result<PluginInfo>）
       const { invoke } = await import('@tauri-apps/api/core');
-
-      // 处理 downloadUrl：如果是相对路径，补全为完整 URL
-      let source = plugin.downloadUrl || `registry://${pluginId}`;
-      if (source.startsWith('/')) {
-        // 相对路径，使用当前页面的 origin 补全
-        source = `${window.location.origin}${source}`;
-      }
-
-      // 处理 registryUrl：如果是相对路径，补全为完整 URL
-      let registryUrl = this.getRegistryUrl();
-      if (registryUrl.startsWith('/')) {
-        registryUrl = `${window.location.origin}${registryUrl}`;
-      }
-
       const result = await invoke<Result<PluginInfo>>('plugin_install', {
-        source,
+        source: plugin.downloadUrl || `registry://${pluginId}`,
         skipSignature: !plugin.verified,
-        registryUrl, // 传递完整的市场 URL
       });
 
       return result;

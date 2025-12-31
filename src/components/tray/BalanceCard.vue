@@ -75,20 +75,28 @@ const themeColor = computed(() => {
     <div class="card-header">
       <span class="card-title">{{ pluginName }}</span>
       <!-- 颜色标识 -->
-      <div class="color-badge" :style="{ backgroundColor: themeColor }"></div>
+      <div
+        class="color-badge"
+        :style="{ backgroundColor: themeColor }"
+      />
     </div>
 
     <div class="card-content">
       <!-- 余额显示 -->
-      <div class="balance-value">{{ formattedBalance }}</div>
+      <div class="balance-value">
+        {{ formattedBalance }}
+      </div>
 
       <!-- 状态指示 -->
       <div class="status-row">
         <span
           class="status-dot"
           :style="{ backgroundColor: statusDisplay.color }"
-        ></span>
-        <span class="status-text" :style="{ color: statusDisplay.color }">
+        />
+        <span
+          class="status-text"
+          :style="{ color: statusDisplay.color }"
+        >
           {{ statusDisplay.text }}
         </span>
       </div>

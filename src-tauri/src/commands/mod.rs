@@ -2,6 +2,7 @@
 // 定义前端可调用的命令
 
 pub mod events;
+pub mod installer;
 pub mod ipc;
 pub mod plugin;
 

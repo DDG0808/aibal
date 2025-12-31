@@ -35,7 +35,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://claude.ai https://api.anthropic.com https://*.statuspage.io"
+      "csp": "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; connect-src 'self' https://claude.ai https://api.anthropic.com https://*.statuspage.io https://raw.githubusercontent.com https://*.github.io"
     },
     "macOSPrivateApi": true
   },

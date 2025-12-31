@@ -50,8 +50,23 @@ const handlePluginClick = (plugin: PluginInfo) => {
   emit('plugin-click', plugin);
 };
 
+// 键盘事件处理
+const handlePluginKeydown = (event: KeyboardEvent, plugin: PluginInfo) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    handlePluginClick(plugin);
+  }
+};
+
 const handleManage = () => {
   emit('manage');
+};
+
+const handleManageKeydown = (event: KeyboardEvent) => {
+  if (event.key === 'Enter' || event.key === ' ') {
+    event.preventDefault();
+    handleManage();
+  }
 };
 </script>
 
@@ -65,7 +80,11 @@ const handleManage = () => {
         class="plugin-avatar"
         :style="{ backgroundColor: getColor(index) }"
         :title="plugin.name"
+        :aria-label="plugin.name"
+        tabindex="0"
+        role="button"
         @click="handlePluginClick(plugin)"
+        @keydown="handlePluginKeydown($event, plugin)"
       >
         {{ getInitial(plugin.name) }}
       </div>
@@ -75,18 +94,64 @@ const handleManage = () => {
         v-if="hiddenCount > 0"
         class="plugin-avatar more"
         :title="`还有 ${hiddenCount} 个插件`"
+        :aria-label="`还有 ${hiddenCount} 个插件，点击管理`"
+        tabindex="0"
+        role="button"
+        @click="handleManage"
+        @keydown="handleManageKeydown"
       >
         ...
       </div>
     </div>
 
     <!-- 管理按钮 -->
-    <button class="manage-btn" @click="handleManage">
-      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect x="3" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/>
-        <rect x="14" y="3" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/>
-        <rect x="3" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/>
-        <rect x="14" y="14" width="7" height="7" rx="1.5" stroke="currentColor" stroke-width="2"/>
+    <button
+      class="manage-btn"
+      @click="handleManage"
+    >
+      <svg
+        width="16"
+        height="16"
+        viewBox="0 0 24 24"
+        fill="none"
+        xmlns="http://www.w3.org/2000/svg"
+      >
+        <rect
+          x="3"
+          y="3"
+          width="7"
+          height="7"
+          rx="1.5"
+          stroke="currentColor"
+          stroke-width="2"
+        />
+        <rect
+          x="14"
+          y="3"
+          width="7"
+          height="7"
+          rx="1.5"
+          stroke="currentColor"
+          stroke-width="2"
+        />
+        <rect
+          x="3"
+          y="14"
+          width="7"
+          height="7"
+          rx="1.5"
+          stroke="currentColor"
+          stroke-width="2"
+        />
+        <rect
+          x="14"
+          y="14"
+          width="7"
+          height="7"
+          rx="1.5"
+          stroke="currentColor"
+          stroke-width="2"
+        />
       </svg>
       <span>Manage Plugins</span>
     </button>

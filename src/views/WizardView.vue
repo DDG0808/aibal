@@ -29,12 +29,17 @@ const finish = async () => {
   <div class="wizard-view">
     <header class="wizard-header">
       <h1>欢迎使用 CUK</h1>
-      <p class="subtitle">让我们完成一些初始设置</p>
+      <p class="subtitle">
+        让我们完成一些初始设置
+      </p>
     </header>
 
     <main class="wizard-content">
       <!-- Step 1: 欢迎 -->
-      <div v-if="currentStep === 1" class="wizard-step">
+      <div
+        v-if="currentStep === 1"
+        class="wizard-step"
+      >
         <div class="step-icon">
           <span>1</span>
         </div>
@@ -48,7 +53,10 @@ const finish = async () => {
       </div>
 
       <!-- Step 2: 配置 -->
-      <div v-if="currentStep === 2" class="wizard-step">
+      <div
+        v-if="currentStep === 2"
+        class="wizard-step"
+      >
         <div class="step-icon">
           <span>2</span>
         </div>
@@ -56,24 +64,35 @@ const finish = async () => {
         <p>配置你的偏好设置。</p>
         <div class="config-options">
           <label class="config-option">
-            <input type="checkbox" checked>
+            <input
+              type="checkbox"
+              checked
+            >
             <span>开机自动启动</span>
           </label>
           <label class="config-option">
-            <input type="checkbox" checked>
+            <input
+              type="checkbox"
+              checked
+            >
             <span>启用使用量提醒</span>
           </label>
         </div>
       </div>
 
       <!-- Step 3: 完成 -->
-      <div v-if="currentStep === 3" class="wizard-step">
+      <div
+        v-if="currentStep === 3"
+        class="wizard-step"
+      >
         <div class="step-icon success">
           <span>✓</span>
         </div>
         <h2>设置完成</h2>
         <p>你已经准备好开始使用 CUK 了！</p>
-        <p class="hint">点击菜单栏图标即可查看使用情况。</p>
+        <p class="hint">
+          点击菜单栏图标即可查看使用情况。
+        </p>
       </div>
     </main>
 
@@ -84,7 +103,7 @@ const finish = async () => {
         :key="step"
         class="progress-dot"
         :class="{ active: step === currentStep, completed: step < currentStep }"
-      ></div>
+      />
     </div>
 
     <footer class="wizard-footer">
