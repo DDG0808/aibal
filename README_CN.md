@@ -134,7 +134,7 @@ AiBal 支持插件系统，允许你添加自定义的 AI 服务商集成。
 
 插件是运行在沙箱化 QuickJS 环境中的 JavaScript 模块，具有受控的 API 访问权限。
 
-详见 [插件开发指南](https://github.com/DDG0808/aibal/wiki/Plugin-Development)。
+详见 [插件开发指南](docs/Plugin-Development.md)。
 
 ## 参与贡献
 

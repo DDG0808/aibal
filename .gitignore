@@ -36,7 +36,7 @@ coverage/
 .claude/
 
 # 项目内部文档（不公开）
-docs/
+docs/plugin-development-guide.md
 STARTUP.md
 功能清单*.md
 任务前置规划清单.md

@@ -134,7 +134,7 @@ AiBal supports a plugin system that allows you to add custom AI provider integra
 
 Plugins are JavaScript modules that run in a sandboxed QuickJS environment with controlled API access.
 
-See [Plugin Development Guide](https://github.com/DDG0808/aibal/wiki/Plugin-Development) for details.
+See [Plugin Development Guide](docs/Plugin-Development.md) for details.
 
 ## Contributing
 
