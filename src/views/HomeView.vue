@@ -100,6 +100,8 @@ const plugins = ref<PluginInfo[]>([]);
 const pluginData = ref<PluginData[]>([]);
 const pluginHealth = ref<PluginHealth[]>([]);
 const error = ref<string | null>(null);
+// 插件执行错误（按插件 ID 存储）
+const pluginErrors = ref<Map<string, { code: string; message: string }>>(new Map());
 
 // 使用 store 中的 selectedPluginId（跨窗口同步）
 const selectedPluginId = computed(() => pluginStore.selectedPluginId);
@@ -154,6 +156,12 @@ const currentPluginData = computed<PluginData | null>(() => {
     d => d.pluginId === selectedPlugin.value!.id
   );
   return data || null;
+});
+
+// 当前插件的错误
+const currentPluginError = computed<{ code: string; message: string } | null>(() => {
+  if (!selectedPlugin.value) return null;
+  return pluginErrors.value.get(selectedPlugin.value.id) ?? null;
 });
 
 // 获取插件健康状态
@@ -272,31 +280,21 @@ const currentQuotas = computed<QuotaItem[]>(() => {
   return [];
 });
 
-// 加载数据
+// 加载数据（只加载当前选中的插件，而非全部）
 const loadData = async (force = false) => {
   console.log('[HomeView] loadData 开始, force=', force);
   try {
-    // 使用 refresh_all 而非 get_all_data，确保实际执行插件 fetchData 并返回数据
-    const [pluginListResult, allDataResult, allHealthResult] = await Promise.all([
+    // 1. 获取插件列表和健康状态（轻量级操作）
+    const [pluginListResult, allHealthResult] = await Promise.all([
       safeInvoke<Result<PluginInfo[]>>('plugin_list'),
-      safeInvoke<Result<PluginData[]>>('refresh_all', { force }),
       safeInvoke<Result<PluginHealth[]>>('get_all_health'),
     ]);
-    console.log('[HomeView] loadData 结果: plugins=', pluginListResult.data?.length, 'data=', allDataResult.data?.length, 'health=', allHealthResult.data?.length);
 
     if (pluginListResult.success && pluginListResult.data) {
       plugins.value = pluginListResult.data;
-      // 调试：打印所有插件状态
-      console.log('[HomeView] 插件列表:', plugins.value.map(p => ({
-        id: p.id,
-        enabled: p.enabled,
-        dataType: p.dataType
-      })));
       // 检查当前选中的插件是否仍然可用
       const currentSelection = pluginStore.selectedPluginId;
       const enabledList = plugins.value.filter(p => p.enabled && p.dataType);
-      console.log('[HomeView] 启用的数据插件:', enabledList.map(p => p.id));
-      console.log('[HomeView] 当前选中:', currentSelection);
 
       const isCurrentValid = currentSelection && enabledList.some(p => p.id === currentSelection);
       const firstEnabled = enabledList[0];
@@ -307,17 +305,31 @@ const loadData = async (force = false) => {
       }
     }
 
-    if (allDataResult.success && allDataResult.data) {
-      pluginData.value = allDataResult.data;
-      console.log('[HomeView] 插件数据:', pluginData.value.map(d => d.pluginId));
-    }
-
-    // 调试：打印最终状态
-    console.log('[HomeView] 最终状态 - selectedPluginId:', pluginStore.selectedPluginId);
-    console.log('[HomeView] 最终状态 - enabledDataPlugins:', plugins.value.filter(p => p.enabled && p.dataType).map(p => p.id));
-
     if (allHealthResult.success && allHealthResult.data) {
       pluginHealth.value = allHealthResult.data;
+    }
+
+    // 2. 只刷新当前选中的插件数据
+    const targetPluginId = pluginStore.selectedPluginId;
+    if (targetPluginId) {
+      console.log('[HomeView] 刷新当前插件:', targetPluginId);
+      const result = await safeInvoke<Result<PluginData>>('refresh_plugin', { id: targetPluginId, force });
+      if (result.success && result.data) {
+        // 更新或添加到 pluginData
+        const index = pluginData.value.findIndex(d => d.pluginId === targetPluginId);
+        if (index >= 0) {
+          pluginData.value[index] = result.data;
+        } else {
+          pluginData.value.push(result.data);
+        }
+        // 刷新成功，清除该插件的错误
+        if (pluginErrors.value.has(targetPluginId)) {
+          const newErrors = new Map(pluginErrors.value);
+          newErrors.delete(targetPluginId);
+          pluginErrors.value = newErrors;
+        }
+        console.log('[HomeView] 插件数据已更新:', targetPluginId);
+      }
     }
 
     error.value = null;
@@ -446,6 +458,20 @@ const setupEventListeners = async () => {
     }
   );
   unlisteners.push(unlistenPluginUpdated);
+
+  // 监听插件错误事件（插件执行失败时更新 UI）
+  const unlistenPluginError = await safeListen<{ id: string; error: { code: string; message: string } }>(
+    'ipc:plugin_error',
+    (event) => {
+      const { id, error: pluginError } = event.payload;
+      console.log('[HomeView] 收到插件错误事件:', id, pluginError.message);
+      // 更新错误状态
+      const newErrors = new Map(pluginErrors.value);
+      newErrors.set(id, pluginError);
+      pluginErrors.value = newErrors;
+    }
+  );
+  unlisteners.push(unlistenPluginError);
 
   // 监听窗口焦点变化事件
   if (isTauri) {
@@ -583,24 +609,39 @@ onUnmounted(() => {
 
       <!-- 配额列表 -->
       <div class="quota-list">
-        <UsageCard
-          v-for="quota in currentQuotas"
-          :key="quota.name"
-          :item="quota"
-        />
-
-        <!-- 空状态 -->
+        <!-- 插件错误状态 -->
         <div
-          v-if="currentQuotas.length === 0"
-          class="empty-state"
+          v-if="currentPluginError"
+          class="plugin-error-state"
         >
-          <p class="empty-state-text">
-            暂无配额数据
-          </p>
-          <p class="empty-state-hint">
-            请先安装并启用插件
-          </p>
+          <div class="plugin-error-icon">⚠️</div>
+          <p class="plugin-error-message">{{ currentPluginError.message }}</p>
+          <button class="plugin-error-retry" @click="handleRefresh">
+            重试
+          </button>
         </div>
+
+        <!-- 正常数据展示 -->
+        <template v-else>
+          <UsageCard
+            v-for="quota in currentQuotas"
+            :key="quota.name"
+            :item="quota"
+          />
+
+          <!-- 空状态 -->
+          <div
+            v-if="currentQuotas.length === 0"
+            class="empty-state"
+          >
+            <p class="empty-state-text">
+              暂无配额数据
+            </p>
+            <p class="empty-state-hint">
+              请先安装并启用插件
+            </p>
+          </div>
+        </template>
       </div>
     </main>
 
@@ -684,5 +725,47 @@ onUnmounted(() => {
   font-size: 0.75rem;
   color: var(--color-text-tertiary);
   margin: 0;
+}
+
+/* 插件错误状态 */
+.plugin-error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--spacing-lg);
+  text-align: center;
+  background: rgba(239, 68, 68, 0.08);
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(239, 68, 68, 0.2);
+  margin-top: 12px !important;
+}
+
+.plugin-error-icon {
+  font-size: 1.5rem;
+  margin-bottom: var(--spacing-sm);
+}
+
+.plugin-error-message {
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--spacing-md);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.plugin-error-retry {
+  background: var(--color-accent-red);
+  color: white;
+  border: none;
+  padding: 6px 16px;
+  border-radius: var(--radius-md);
+  font-size: 0.75rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+
+.plugin-error-retry:hover {
+  background: #dc2626;
 }
 </style>

@@ -6,7 +6,8 @@
     "main",
     "settings",
     "wizard",
-    "about"
+    "about",
+    "dashboard"
   ],
   "permissions": [
     "core:default",

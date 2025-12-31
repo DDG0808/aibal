@@ -94,6 +94,8 @@ export const usePluginStore = defineStore('plugin', () => {
   const isLoading = ref(false);
   const isRefreshing = ref(false);
   const error = ref<string | null>(null);
+  // 插件执行错误（按插件 ID 存储，用于在 UI 显示具体错误信息）
+  const pluginErrors = ref<Map<string, { code: string; message: string }>>(new Map());
 
   // 当前选中的插件 ID（跨窗口同步）
   const selectedPluginId = ref<string>('');
@@ -136,6 +138,13 @@ export const usePluginStore = defineStore('plugin', () => {
   const selectedPluginHealth = computed<PluginHealth | null>(() => {
     if (!selectedPluginId.value) return null;
     return pluginHealth.value.get(selectedPluginId.value) ?? null;
+  });
+
+  // 当前选中插件的错误信息
+  const selectedPluginError = computed<{ code: string; message: string } | null>(() => {
+    if (!selectedPluginId.value) return null;
+    const errorsMap = pluginErrors.value;
+    return errorsMap.get(selectedPluginId.value) ?? null;
   });
 
   // 获取插件列表
@@ -276,6 +285,12 @@ export const usePluginStore = defineStore('plugin', () => {
         const newMap = new Map(pluginData.value);
         newMap.set(id, result.data);
         pluginData.value = newMap;
+        // 刷新成功，清除对应插件的错误
+        if (pluginErrors.value.has(id)) {
+          const newErrors = new Map(pluginErrors.value);
+          newErrors.delete(id);
+          pluginErrors.value = newErrors;
+        }
         console.log('[Plugin] refreshPlugin 成功:', id, 'dataType:', result.data.dataType, 'Map size:', newMap.size);
         return result.data;
       }
@@ -538,6 +553,44 @@ export const usePluginStore = defineStore('plugin', () => {
     }
   }
 
+  // 监听插件错误事件（返回 cleanup 函数）
+  async function setupPluginErrorListener(): Promise<() => void> {
+    if (!isTauri) return () => {};
+    try {
+      const { listen } = await import('@tauri-apps/api/event');
+      console.log('[Plugin] 开始监听插件错误事件');
+      const unlisten = await listen<{ id: string; error: { code: string; message: string } }>(
+        'ipc:plugin_error',
+        (event) => {
+          const { id, error: pluginError } = event.payload;
+          console.log('[Plugin] 收到插件错误事件:', id, pluginError.message);
+          setPluginError(id, pluginError);
+        }
+      );
+      return unlisten;
+    } catch (e) {
+      console.warn('[Plugin] 监听插件错误失败:', e);
+      return () => {};
+    }
+  }
+
+  // 设置插件错误（用于触发响应式更新）
+  function setPluginError(id: string, error: { code: string; message: string }): void {
+    const newErrors = new Map(pluginErrors.value);
+    newErrors.set(id, error);
+    pluginErrors.value = newErrors;
+    console.log('[Plugin] 插件错误已更新:', id, error.message, 'map size:', newErrors.size);
+  }
+
+  // 清除插件错误
+  function clearPluginError(id: string): void {
+    if (pluginErrors.value.has(id)) {
+      const newErrors = new Map(pluginErrors.value);
+      newErrors.delete(id);
+      pluginErrors.value = newErrors;
+    }
+  }
+
   // 监听其他窗口的插件选择
   async function setupPluginSelectionListener(): Promise<() => void> {
     if (!isTauri) return () => {};
@@ -632,6 +685,8 @@ export const usePluginStore = defineStore('plugin', () => {
     await Promise.all([fetchAllHealth(), fetchAllData()]);
     // 6. 监听其他窗口的插件选择
     await setupPluginSelectionListener();
+    // 7. 监听插件错误事件（用于 UI 显示错误状态）
+    await setupPluginErrorListener();
   }
 
   // ============================================================================
@@ -805,6 +860,11 @@ export const usePluginStore = defineStore('plugin', () => {
     systemHealthRate,
     selectedPluginData,
     selectedPluginHealth,
+    selectedPluginError,
+    pluginErrors,
+    // 错误管理
+    setPluginError,
+    clearPluginError,
     // 方法
     fetchPlugins,
     fetchAllData,

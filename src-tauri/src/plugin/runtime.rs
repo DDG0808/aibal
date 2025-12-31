@@ -720,16 +720,32 @@ impl PluginExecutor {
             }).await?;
 
             // 第二步：执行插件代码获取 Promise
+            // 使用 Arc<Mutex> 来捕获同步执行期间的错误消息
+            let sync_error_msg: Arc<std::sync::Mutex<Option<String>>> = Arc::new(std::sync::Mutex::new(None));
+            let sync_error_msg_clone = sync_error_msg.clone();
+
             let exec_result = self.runtime
                 .run_with_limits(&ctx, move |js_ctx| -> rquickjs::Result<()> {
                     // 执行插件代码
                     let result: rquickjs::Value = match js_ctx.eval(code_owned.as_bytes().to_vec()) {
                         Ok(v) => v,
                         Err(e) => {
+                            // 尝试从异常中提取更详细的错误消息
+                            let mut err_msg = String::new();
                             if let Some(exc) = js_ctx.catch().as_exception() {
-                                log::error!("JS 异常消息: {}", exc.message().unwrap_or_default());
+                                let msg = exc.message().unwrap_or_default();
+                                log::error!("JS 异常消息: {}", msg);
+                                if !msg.is_empty() {
+                                    err_msg = msg;
+                                }
                                 if let Some(stack) = exc.stack() {
                                     log::error!("JS 异常堆栈: {}", stack);
+                                }
+                            }
+                            // 保存错误消息
+                            if !err_msg.is_empty() {
+                                if let Ok(mut guard) = sync_error_msg_clone.lock() {
+                                    *guard = Some(err_msg);
                                 }
                             }
                             return Err(e);
@@ -758,6 +774,13 @@ impl PluginExecutor {
                 .await;
 
             if let Err(e) = exec_result {
+                // 优先使用捕获的错误消息
+                if let Ok(guard) = sync_error_msg.lock() {
+                    if let Some(msg) = guard.as_ref() {
+                        log::error!("插件代码执行失败（详细）: {}", msg);
+                        return Err(RuntimeError::RuntimeCreation(msg.clone()));
+                    }
+                }
                 log::error!("插件代码执行失败: {:?}", e);
                 return Err(e);
             }
@@ -766,7 +789,7 @@ impl PluginExecutor {
             self.runtime.runtime.idle().await;
 
             // 第四步：获取异步结果
-            ctx.with(|js_ctx| -> rquickjs::Result<String> {
+            let async_result: Result<String, String> = ctx.with(|js_ctx| -> rquickjs::Result<Result<String, String>> {
                 // 检查是否有错误
                 let error: rquickjs::Value = js_ctx.eval(b"globalThis.__asyncError".to_vec())?;
                 if !error.is_null() && !error.is_undefined() {
@@ -780,19 +803,28 @@ impl PluginExecutor {
                                     .and_then(|s| s.to_string().ok())
                                     .unwrap_or_else(|| "Unknown error".to_string())
                             })
+                    } else if let Some(s) = error.as_string() {
+                        s.to_string().unwrap_or_else(|_| "Unknown error".to_string())
                     } else {
                         format!("{:?}", error)
                     };
-                    return Err(rquickjs::Exception::throw_message(&js_ctx, &err_str));
+                    log::error!("插件异步执行错误: {}", err_str);
+                    return Ok(Err(err_str));
                 }
 
                 // 获取结果
                 let result: rquickjs::Value = js_ctx.eval(b"globalThis.__asyncResult".to_vec())?;
                 match js_ctx.json_stringify(result)? {
-                    Some(s) => Ok(s.to_string()?),
-                    None => Ok("null".to_string()),
+                    Some(s) => Ok(Ok(s.to_string()?)),
+                    None => Ok(Ok("null".to_string())),
                 }
-            }).await?
+            }).await?;
+
+            // 处理异步执行结果
+            match async_result {
+                Ok(json_str) => json_str,
+                Err(err_msg) => return Err(RuntimeError::RuntimeCreation(err_msg)),
+            }
         } else {
             // 同步执行，不等待异步 Promise
             self.runtime

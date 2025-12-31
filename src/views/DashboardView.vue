@@ -47,6 +47,8 @@ const hasPlugins = computed(() => plugins.value.length > 0);
 const selectedPlugin = computed(() => plugins.value.find(p => p.id === selectedPluginId.value));
 // 使用 store 的 computed 确保响应式追踪正确
 const healthData = computed(() => pluginStore.selectedPluginHealth);
+// 插件执行错误（用于显示错误状态）
+const pluginError = computed(() => pluginStore.selectedPluginError);
 
 // 当前数据和类型（使用 store 的 computed 确保响应式追踪正确）
 const currentData = computed<PluginData | null>(() => {
@@ -374,6 +376,18 @@ async function setupEventListeners(): Promise<void> {
     await pluginStore.fetchAllData();
   });
   unlisteners.push(unlistenPluginEnabled);
+
+  // 监听插件错误事件（插件执行失败时更新 UI）
+  const unlistenPluginError = await safeListen<{ id: string; error: { code: string; message: string } }>(
+    'ipc:plugin_error',
+    (event) => {
+      const { id, error: pluginError } = event.payload;
+      console.log('[DashboardView] 收到插件错误事件:', id, pluginError.message);
+      // 使用 store 方法更新错误状态（确保响应式更新）
+      pluginStore.setPluginError(id, pluginError);
+    }
+  );
+  unlisteners.push(unlistenPluginError);
 }
 
 // 初始化（带超时保护）
@@ -656,8 +670,22 @@ onUnmounted(() => {
             <div class="refresh-spinner"></div>
           </div>
 
-          <!-- 无数据状态（仅在初始化完成后显示） -->
-          <div v-if="!isInitializing && !hasData" class="no-data-state">
+          <!-- 错误状态（插件执行失败时显示） -->
+          <div v-if="!isInitializing && pluginError" class="error-state">
+            <div class="error-icon">⚠️</div>
+            <h4>获取数据失败</h4>
+            <p class="error-message">{{ pluginError.message }}</p>
+            <div class="error-actions">
+              <button class="retry-btn" @click="refreshData">
+                <IconRefresh />
+                重试
+              </button>
+              <button class="config-btn-secondary" @click="goToPluginConfig">检查配置</button>
+            </div>
+          </div>
+
+          <!-- 无数据状态（仅在初始化完成后且无错误时显示） -->
+          <div v-else-if="!isInitializing && !hasData" class="no-data-state">
             <div class="no-data-icon">⚙️</div>
             <h4>需要配置插件</h4>
             <p>请先配置插件的 API 密钥等参数</p>
@@ -1491,6 +1519,85 @@ onUnmounted(() => {
   justify-content: space-between;
   font-size: 0.75rem;
   color: var(--color-text-tertiary);
+}
+
+/* 错误状态 */
+.error-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--spacing-xl);
+  text-align: center;
+  background: rgba(239, 68, 68, 0.05);
+  border-radius: var(--radius-lg);
+  border: 1px solid rgba(239, 68, 68, 0.15);
+}
+
+.error-icon {
+  font-size: 2.5rem;
+  margin-bottom: var(--spacing-md);
+}
+
+.error-state h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-accent-red);
+  margin-bottom: var(--spacing-sm);
+}
+
+.error-message {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-lg);
+  max-width: 300px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.error-actions {
+  display: flex;
+  gap: var(--spacing-sm);
+}
+
+.retry-btn {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+  background: var(--color-accent-red);
+  color: white;
+  border: none;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.retry-btn:hover {
+  background: #dc2626;
+}
+
+.retry-btn svg {
+  width: 16px;
+  height: 16px;
+}
+
+.config-btn-secondary {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  border: 1px solid var(--color-border);
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.config-btn-secondary:hover {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
 }
 
 /* 无数据状态 */
