@@ -13,6 +13,8 @@
 // 注意: PluginErrorType 在 errors.d.ts 中定义，此处不导入以避免循环依赖
 // 如需使用，请单独导入: import { PluginErrorType } from './errors';
 
+import type { ConfigFieldSchema } from './plugin-module';
+
 // ============================================================================
 // 基础类型
 // ============================================================================
@@ -76,6 +78,8 @@ export interface PluginInfo {
   description?: string;
   /** 图标文件名 */
   icon?: string;
+  /** 配置 Schema */
+  configSchema?: Record<string, ConfigFieldSchema>;
 }
 
 /**
@@ -197,6 +201,32 @@ export interface UsageData extends PluginDataBase {
 }
 
 /**
+ * 余额子项（用于多配额场景，如 PAYGO/PLUS/FREE）
+ */
+export interface BalanceItem {
+  /** 子项名称（如 PAYGO, PLUS, FREE） */
+  name: string;
+  /** 已用额度 */
+  used: number;
+  /** 总额度 */
+  quota: number;
+  /** 使用百分比 (0-100) */
+  percentage: number;
+  /** 货币/单位 */
+  currency?: string;
+  /** 重置时间 (ISO 8601) */
+  resetTime?: string;
+  /** 重置标签（如 "今日已用完"、"12-31 04:43 可重置"） */
+  resetLabel?: string;
+  /** 到期时间 (ISO 8601) */
+  expiresAt?: string;
+  /** 剩余天数 */
+  remainingDays?: number;
+  /** 是否可刷新 */
+  refreshable?: boolean;
+}
+
+/**
  * 余额数据
  */
 export interface BalanceData extends PluginDataBase {
@@ -211,6 +241,8 @@ export interface BalanceData extends PluginDataBase {
   usedQuota?: number;
   /** 到期时间 (ISO 8601) */
   expiresAt?: string;
+  /** 多配额子项（如 PAYGO/PLUS/FREE） */
+  items?: BalanceItem[];
 }
 
 /**

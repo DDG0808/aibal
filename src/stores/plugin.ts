@@ -415,20 +415,27 @@ export const usePluginStore = defineStore('plugin', () => {
   // 清理定时器追踪（修复 setTimeout 竞态问题）
   const cleanupTimers = ref<Map<string, ReturnType<typeof setTimeout>>>(new Map());
 
+  // 需要签名确认的插件 (pluginId -> true)
+  const pendingSignatureConfirm = ref<Map<string, boolean>>(new Map());
+
   /**
    * 从市场安装插件
    * 使用返回的 PluginInfo 直接更新本地列表（优化：避免额外 fetchPlugins）
+   *
+   * @param pluginId 插件 ID
+   * @param skipSignature 是否跳过签名验证（用户确认后传 true）
+   * @returns 'success' | 'need_confirm' | 'error'
    */
-  async function installMarketplacePlugin(pluginId: string): Promise<boolean> {
+  async function installMarketplacePlugin(pluginId: string, skipSignature = false): Promise<'success' | 'need_confirm' | 'error'> {
     // 已安装检查
     if (isInstalled(pluginId)) {
-      return true;
+      return 'success';
     }
 
     // 正在安装检查
     const currentStatus = installingPlugins.value.get(pluginId);
     if (currentStatus === 'downloading' || currentStatus === 'installing') {
-      return false;
+      return 'error';
     }
 
     // 清除之前的错误和定时器
@@ -444,7 +451,7 @@ export const usePluginStore = defineStore('plugin', () => {
       installingPlugins.value.set(pluginId, 'downloading');
 
       // 调用市场服务安装
-      const result = await marketplaceService.installPlugin(pluginId);
+      const result = await marketplaceService.installPlugin(pluginId, skipSignature);
 
       if (result.success && result.data) {
         // 设置安装中状态
@@ -458,6 +465,7 @@ export const usePluginStore = defineStore('plugin', () => {
 
         // 设置成功状态
         installingPlugins.value.set(pluginId, 'success');
+        pendingSignatureConfirm.value.delete(pluginId);
 
         // 异步刷新新插件的 data 和 health（非阻塞）
         // 新安装插件可能尚未产生数据，获取失败是正常的，静默处理
@@ -472,20 +480,42 @@ export const usePluginStore = defineStore('plugin', () => {
         }, 3000);
         cleanupTimers.value.set(pluginId, timer);
 
-        return true;
+        return 'success';
       } else {
-        // 设置错误状态
+        // 检查是否是签名验证失败
+        if (marketplaceService.isSignatureError(result.error?.code)) {
+          // 需要用户确认
+          installingPlugins.value.set(pluginId, 'idle');
+          pendingSignatureConfirm.value.set(pluginId, true);
+          return 'need_confirm';
+        }
+
+        // 其他错误
         installingPlugins.value.set(pluginId, 'error');
         installErrors.value.set(pluginId, result.error?.message ?? '安装失败');
-        return false;
+        return 'error';
       }
     } catch (e) {
       // 设置错误状态
       installingPlugins.value.set(pluginId, 'error');
       const errorMsg = e instanceof Error ? e.message : '安装失败';
       installErrors.value.set(pluginId, errorMsg);
-      return false;
+      return 'error';
     }
+  }
+
+  /**
+   * 检查插件是否需要签名确认
+   */
+  function needsSignatureConfirm(pluginId: string): boolean {
+    return pendingSignatureConfirm.value.get(pluginId) ?? false;
+  }
+
+  /**
+   * 取消签名确认
+   */
+  function cancelSignatureConfirm(pluginId: string): void {
+    pendingSignatureConfirm.value.delete(pluginId);
   }
 
   /**
@@ -542,5 +572,8 @@ export const usePluginStore = defineStore('plugin', () => {
     getInstallError,
     installMarketplacePlugin,
     resetInstallStatus,
+    // 签名确认
+    needsSignatureConfirm,
+    cancelSignatureConfirm,
   };
 });

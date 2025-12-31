@@ -1,112 +1,56 @@
 <script setup lang="ts">
 /**
- * 状态卡片组件
- * 显示系统状态、描述和监控插件数量
+ * 系统状态卡片组件
+ * 显示系统状态和健康插件数量
  */
 import { computed } from 'vue';
-import type { StatusIndicator } from '@/types';
 
 interface Props {
-  /** 状态指示 */
-  indicator: StatusIndicator;
-  /** 状态描述 */
-  description?: string;
-  /** 监控插件数量 */
-  monitoredCount?: number;
-  /** 是否可展开 */
-  expandable?: boolean;
+  /** 健康插件数量 */
+  healthyCount?: number;
+  /** 总插件数量 */
+  totalCount?: number;
 }
 
 const props = withDefaults(defineProps<Props>(), {
-  description: 'System Status',
-  monitoredCount: 0,
-  expandable: false,
+  healthyCount: 0,
+  totalCount: 0,
 });
 
-const emit = defineEmits<{
-  (e: 'expand'): void;
-}>();
-
-// 状态显示配置
+// 状态配置
 const statusConfig = computed(() => {
-  switch (props.indicator) {
-    case 'none':
-      return { text: 'Operational', color: 'var(--color-accent-green)' };
-    case 'minor':
-      return { text: 'Minor Issues', color: 'var(--color-accent)' };
-    case 'major':
-      return { text: 'Major Outage', color: 'var(--color-accent-red)' };
-    case 'critical':
-      return { text: 'Critical', color: 'var(--color-accent-red)' };
-    default:
-      return { text: 'Unknown', color: 'var(--color-text-secondary)' };
+  if (props.totalCount === 0) {
+    return { color: 'var(--color-text-tertiary)' };
   }
+  if (props.healthyCount === props.totalCount) {
+    return { color: 'var(--color-accent-green)' };
+  }
+  if (props.healthyCount === 0) {
+    return { color: 'var(--color-accent-red)' };
+  }
+  return { color: 'var(--color-accent)' };
 });
 
-// 副标题显示
-const subtitle = computed(() => {
-  if (props.monitoredCount > 0) {
-    return `Monitored by ${props.monitoredCount} plugin${props.monitoredCount > 1 ? 's' : ''}`;
+// 描述文字
+const description = computed(() => {
+  if (props.totalCount === 0) {
+    return '暂无插件';
   }
-  // 避免与 description 重复，显示状态文本
-  return statusConfig.value.text;
+  return `共 ${props.healthyCount} 个健康插件`;
 });
-
-const handleExpand = () => {
-  if (props.expandable) {
-    emit('expand');
-  }
-};
-
-// 键盘可达性支持
-const handleKeydown = (e: KeyboardEvent) => {
-  if (props.expandable && (e.key === 'Enter' || e.key === ' ')) {
-    e.preventDefault();
-    emit('expand');
-  }
-};
 </script>
 
 <template>
-  <div
-    class="status-card"
-    :class="{ expandable }"
-    :role="expandable ? 'button' : undefined"
-    :tabindex="expandable ? 0 : undefined"
-    :aria-label="expandable ? `${description} - ${statusConfig.text}` : undefined"
-    @click="handleExpand"
-    @keydown="handleKeydown"
-  >
+  <div class="status-card">
     <div class="status-left">
       <span
         class="status-dot"
         :style="{ backgroundColor: statusConfig.color }"
       />
       <div class="status-info">
-        <span class="status-title">{{ description }}</span>
-        <span class="status-subtitle">{{ subtitle }}</span>
+        <span class="status-title">系统状态</span>
+        <span class="status-subtitle">{{ description }}</span>
       </div>
-    </div>
-
-    <div
-      v-if="expandable"
-      class="status-right"
-    >
-      <svg
-        width="16"
-        height="16"
-        viewBox="0 0 24 24"
-        fill="none"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <path
-          d="M9 18l6-6-6-6"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linecap="round"
-          stroke-linejoin="round"
-        />
-      </svg>
     </div>
   </div>
 </template>
@@ -116,19 +60,9 @@ const handleKeydown = (e: KeyboardEvent) => {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  background: var(--color-bg-secondary);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-md);
-  border: 1px dashed var(--color-border);
-}
-
-.status-card.expandable {
-  cursor: pointer;
-  transition: background-color 0.2s ease;
-}
-
-.status-card.expandable:hover {
-  background: var(--color-bg);
+  padding: var(--spacing-sm) 0;
+  border-top: 1px solid var(--color-border);
+  margin-top: var(--spacing-sm);
 }
 
 .status-left {
@@ -138,8 +72,8 @@ const handleKeydown = (e: KeyboardEvent) => {
 }
 
 .status-dot {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
   border-radius: 50%;
   flex-shrink: 0;
 }
@@ -147,21 +81,17 @@ const handleKeydown = (e: KeyboardEvent) => {
 .status-info {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: 1px;
 }
 
 .status-title {
-  font-size: 0.875rem;
+  font-size: 0.75rem;
   font-weight: 500;
-  color: var(--color-text);
+  color: var(--color-text-secondary);
 }
 
 .status-subtitle {
-  font-size: 0.75rem;
-  color: var(--color-text-secondary);
-}
-
-.status-right {
-  color: var(--color-text-secondary);
+  font-size: 0.6875rem;
+  color: var(--color-text-tertiary);
 }
 </style>

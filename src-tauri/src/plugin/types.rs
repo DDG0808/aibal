@@ -118,6 +118,9 @@ pub struct PluginInfo {
     /// 图标文件名
     #[serde(skip_serializing_if = "Option::is_none")]
     pub icon: Option<String>,
+    /// 配置 Schema
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub config_schema: Option<serde_json::Value>,
 }
 
 /// 更新信息
@@ -251,6 +254,41 @@ pub struct UsageData {
     pub dimensions: Option<Vec<UsageDimension>>,
 }
 
+/// 余额子项（用于多配额场景，如 PAYGO/PLUS/FREE）
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BalanceItem {
+    /// 子项名称（如 PAYGO, PLUS, FREE）
+    pub name: String,
+    /// 已用额度
+    #[serde(default)]
+    pub used: f64,
+    /// 总额度
+    #[serde(default)]
+    pub quota: f64,
+    /// 使用百分比 (0-100)
+    #[serde(default)]
+    pub percentage: f64,
+    /// 货币/单位
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+    /// 重置时间 (ISO 8601)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reset_time: Option<String>,
+    /// 重置标签（如 "今日已用完"、"12-31 04:43 可重置"）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub reset_label: Option<String>,
+    /// 到期时间 (ISO 8601)
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub expires_at: Option<String>,
+    /// 剩余天数
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub remaining_days: Option<i64>,
+    /// 是否可刷新
+    #[serde(default)]
+    pub refreshable: bool,
+}
+
 /// 余额数据
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -271,6 +309,9 @@ pub struct BalanceData {
     /// 到期时间 (ISO 8601)
     #[serde(skip_serializing_if = "Option::is_none")]
     pub expires_at: Option<String>,
+    /// 多配额子项（如 PAYGO/PLUS/FREE）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub items: Option<Vec<BalanceItem>>,
 }
 
 /// 状态指示器

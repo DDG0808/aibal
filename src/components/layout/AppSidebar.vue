@@ -25,7 +25,6 @@ const menuItems = [
 ];
 
 const systemItems = [
-  { id: 'logs', label: '运行日志', icon: 'logs', path: '/logs' },
   { id: 'settings', label: '全局设置', icon: 'settings', path: '/settings' },
 ];
 
@@ -341,49 +340,6 @@ function handleKeydown(event: KeyboardEvent, path: string) {
       </div>
     </nav>
 
-    <!-- 用户信息 -->
-    <div class="sidebar-footer">
-      <div
-        class="user-info"
-        :title="isCollapsed ? '用户账户' : ''"
-      >
-        <div class="user-avatar">
-          U
-        </div>
-        <div
-          v-show="!isCollapsed"
-          class="user-details"
-        >
-          <span class="user-name">用户账户</span>
-          <span class="user-plan">专业版许可</span>
-        </div>
-        <button
-          v-show="!isCollapsed"
-          class="user-settings-btn"
-          aria-label="用户设置"
-        >
-          <svg
-            width="16"
-            height="16"
-            viewBox="0 0 24 24"
-            fill="none"
-          >
-            <circle
-              cx="12"
-              cy="12"
-              r="3"
-              stroke="currentColor"
-              stroke-width="2"
-            />
-            <path
-              d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-2 2 2 2 0 01-2-2v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83 0 2 2 0 010-2.83l.06-.06a1.65 1.65 0 00.33-1.82 1.65 1.65 0 00-1.51-1H3a2 2 0 01-2-2 2 2 0 012-2h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 010-2.83 2 2 0 012.83 0l.06.06a1.65 1.65 0 001.82.33H9a1.65 1.65 0 001-1.51V3a2 2 0 012-2 2 2 0 012 2v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 0 2 2 0 010 2.83l-.06.06a1.65 1.65 0 00-.33 1.82V9a1.65 1.65 0 001.51 1H21a2 2 0 012 2 2 2 0 01-2 2h-.09a1.65 1.65 0 00-1.51 1z"
-              stroke="currentColor"
-              stroke-width="2"
-            />
-          </svg>
-        </button>
-      </div>
-    </div>
   </aside>
 </template>
 
@@ -510,64 +466,6 @@ function handleKeydown(event: KeyboardEvent, path: string) {
   font-size: 0.875rem;
 }
 
-.sidebar-footer {
-  padding: var(--spacing-md);
-  border-top: 1px solid var(--color-border);
-}
-
-.user-info {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md);
-  padding: var(--spacing-sm);
-  border-radius: var(--radius-md);
-}
-
-.user-avatar {
-  width: 36px;
-  height: 36px;
-  background: var(--color-accent);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 600;
-  font-size: 0.875rem;
-  color: white;
-}
-
-.user-details {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-}
-
-.user-name {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--color-text);
-}
-
-.user-plan {
-  font-size: 0.75rem;
-  color: var(--color-text-tertiary);
-}
-
-.user-settings-btn {
-  background: none;
-  border: none;
-  padding: var(--spacing-sm);
-  cursor: pointer;
-  color: var(--color-text-tertiary);
-  border-radius: var(--radius-sm);
-  transition: all var(--transition-fast);
-}
-
-.user-settings-btn:hover {
-  background: var(--color-bg-hover);
-  color: var(--color-text);
-}
-
 /* 折叠按钮 */
 .collapse-btn {
   background: none;
@@ -617,16 +515,6 @@ function handleKeydown(event: KeyboardEvent, path: string) {
   padding: 0 var(--spacing-sm);
 }
 
-.sidebar.collapsed .user-info {
-  justify-content: center;
-}
-
-.sidebar.collapsed .user-avatar {
-  width: 32px;
-  height: 32px;
-  font-size: 0.75rem;
-}
-
 /* 响应式：中等屏幕自动折叠 */
 @media (max-width: 1023px) {
   .sidebar {
@@ -635,9 +523,7 @@ function handleKeydown(event: KeyboardEvent, path: string) {
 
   .sidebar .app-info,
   .sidebar .nav-section-title,
-  .sidebar .nav-label,
-  .sidebar .user-details,
-  .sidebar .user-settings-btn {
+  .sidebar .nav-label {
     display: none !important;
   }
 
@@ -664,16 +550,6 @@ function handleKeydown(event: KeyboardEvent, path: string) {
 
   .sidebar .sidebar-nav {
     padding: 0 var(--spacing-sm);
-  }
-
-  .sidebar .user-info {
-    justify-content: center;
-  }
-
-  .sidebar .user-avatar {
-    width: 32px;
-    height: 32px;
-    font-size: 0.75rem;
   }
 }
 

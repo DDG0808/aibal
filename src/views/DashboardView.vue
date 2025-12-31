@@ -4,12 +4,14 @@
  * Phase 8.3: 数据聚合展示、健康状态展示
  */
 import { ref, computed, onMounted } from 'vue';
+import { useRouter } from 'vue-router';
 import { AppLayout } from '@/components/layout';
 import { IconBolt, IconRefresh } from '@/components/icons';
 import { usePluginStore } from '@/stores';
 import type { UsageData, BalanceData, StatusData, PluginData } from '@/types';
 
 const pluginStore = usePluginStore();
+const router = useRouter();
 
 // 状态
 const isLoading = ref(false);
@@ -40,9 +42,39 @@ function selectPlugin(id: string) {
   showPluginDropdown.value = false;
 }
 
+// 获取插件余额显示信息（值和标签分开，用于不同颜色渲染）
+function getPluginBalanceInfo(pluginId: string): { value: string; label: string; color: string } {
+  const data = pluginStore.pluginData.get(pluginId);
+  // 所有数值统一用橙色
+  const valueColor = 'var(--color-accent)';
+  if (!data) return { value: '--', label: '余额', color: valueColor };
+
+  if (data.dataType === 'balance') {
+    const balData = data as BalanceData;
+    const formatted = formatBalance(balData.balance, balData.currency);
+    return { value: formatted, label: '余额', color: valueColor };
+  }
+  if (data.dataType === 'usage') {
+    const usgData = data as UsageData;
+    return { value: `${usgData.percentage}%`, label: '已用', color: valueColor };
+  }
+  if (data.dataType === 'status') {
+    const stsData = data as StatusData;
+    const indicator = stsData.indicator ?? 'unknown';
+    let statusText = '正常';
+    if (indicator === 'minor' || indicator === 'major') {
+      statusText = '降级';
+    } else if (indicator === 'critical') {
+      statusText = '中断';
+    }
+    return { value: statusText, label: '状态', color: valueColor };
+  }
+  return { value: '--', label: '余额', color: valueColor };
+}
+
 // 跳转到市场
 function goToMarketplace() {
-  window.location.href = '#/marketplace';
+  router.push('/marketplace');
 }
 
 // 获取使用量数据
@@ -176,6 +208,62 @@ function formatResetTime(isoTime?: string): string {
   return `${minutes}m 重置`;
 }
 
+// ============================================================================
+// Balance Items 辅助函数
+// ============================================================================
+
+// 获取 item 进度条颜色
+function getItemProgressColor(percentage: number): string {
+  if (percentage >= 90) return 'var(--color-accent-red)';
+  if (percentage >= 75) return 'var(--color-accent)';
+  return 'var(--color-accent-green)';
+}
+
+// 格式化 item 已用量显示
+function formatItemUsed(item: { used: number; quota: number; currency?: string }): string {
+  const currency = item.currency || '%';
+  // 如果有小数，保留合适的精度
+  const formatNum = (n: number) => {
+    if (n === Math.floor(n)) return n.toString();
+    return n.toFixed(n < 10 ? 3 : 2);
+  };
+  // 按量付费模式（quota 为 0）只显示剩余
+  if (!item.quota || item.quota === 0) {
+    // 对于按量付费，used 实际是 remaining（剩余额度）
+    return `剩余 ${formatNum(item.used)} ${currency}`;
+  }
+  return `${formatNum(item.used)} / ${formatNum(item.quota)} ${currency}`;
+}
+
+// 格式化 item 重置/到期信息
+function formatItemReset(item: {
+  resetLabel?: string;
+  resetTime?: string;
+  expiresAt?: string;
+  remainingDays?: number;
+}): string {
+  // 优先使用 resetLabel
+  if (item.resetLabel) return item.resetLabel;
+
+  // 显示剩余天数
+  if (item.remainingDays !== undefined) {
+    if (item.remainingDays <= 0) return '已到期';
+    return `剩余 ${item.remainingDays} 天`;
+  }
+
+  // 格式化重置时间
+  if (item.resetTime) {
+    return formatResetTime(item.resetTime);
+  }
+
+  // 格式化到期时间
+  if (item.expiresAt) {
+    return formatExpiresAt(item.expiresAt);
+  }
+
+  return '';
+}
+
 // 刷新数据
 async function refreshData() {
   if (!selectedPluginId.value) return;
@@ -190,7 +278,7 @@ async function refreshData() {
 // 跳转到插件配置
 function goToPluginConfig() {
   if (selectedPluginId.value) {
-    window.location.href = `#/plugins?plugin=${selectedPluginId.value}`;
+    router.push({ path: '/settings', query: { plugin: selectedPluginId.value } });
   }
 }
 
@@ -216,10 +304,127 @@ onMounted(async () => {
     <div class="dashboard">
       <!-- 空状态 -->
       <div v-if="!hasPlugins" class="empty-state">
-        <div class="empty-icon">📊</div>
-        <h3>暂无用量监控插件</h3>
-        <p>安装插件后即可在此查看 AI 服务的使用量、余额等数据</p>
-        <button class="go-marketplace-btn" @click="goToMarketplace">前往插件市场</button>
+        <!-- 背景装饰 -->
+        <div class="empty-bg-decoration">
+          <div class="decoration-circle decoration-circle-1"></div>
+          <div class="decoration-circle decoration-circle-2"></div>
+          <div class="decoration-circle decoration-circle-3"></div>
+        </div>
+
+        <!-- 精美的 SVG 插画 -->
+        <div class="empty-illustration">
+          <svg width="180" height="140" viewBox="0 0 180 140" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <!-- 底部平台 -->
+            <ellipse cx="90" cy="130" rx="70" ry="8" fill="url(#platformGradient)" opacity="0.3"/>
+
+            <!-- 主仪表盘面板 -->
+            <rect x="35" y="30" width="110" height="85" rx="12" fill="url(#panelGradient)" stroke="url(#borderGradient)" stroke-width="1.5"/>
+
+            <!-- 面板内部装饰线 -->
+            <line x1="50" y1="50" x2="130" y2="50" stroke="var(--color-border)" stroke-width="1" opacity="0.5"/>
+
+            <!-- 柱状图 -->
+            <rect x="55" y="75" width="16" height="30" rx="3" fill="url(#barGradient1)" class="bar bar-1"/>
+            <rect x="82" y="60" width="16" height="45" rx="3" fill="url(#barGradient2)" class="bar bar-2"/>
+            <rect x="109" y="68" width="16" height="37" rx="3" fill="url(#barGradient3)" class="bar bar-3"/>
+
+            <!-- 仪表盘圆环（右上角装饰） -->
+            <circle cx="145" cy="25" r="20" fill="var(--color-bg-tertiary)" stroke="url(#ringGradient)" stroke-width="3" opacity="0.8"/>
+            <path d="M145 13 A12 12 0 1 1 133 25" stroke="var(--color-accent)" stroke-width="3" stroke-linecap="round" class="gauge-arc"/>
+
+            <!-- 浮动数据点 -->
+            <circle cx="30" cy="50" r="6" fill="var(--color-accent-green)" class="float-dot dot-1"/>
+            <circle cx="155" cy="70" r="4" fill="var(--color-accent)" class="float-dot dot-2"/>
+            <circle cx="25" cy="85" r="3" fill="var(--color-accent-red)" class="float-dot dot-3"/>
+
+            <!-- 连接线 -->
+            <path d="M36 50 L55 75" stroke="var(--color-accent-green)" stroke-width="1" stroke-dasharray="3 3" opacity="0.5"/>
+            <path d="M151 70 L125 68" stroke="var(--color-accent)" stroke-width="1" stroke-dasharray="3 3" opacity="0.5"/>
+
+            <!-- 渐变定义 -->
+            <defs>
+              <linearGradient id="platformGradient" x1="20" y1="130" x2="160" y2="130">
+                <stop offset="0%" stop-color="var(--color-text-tertiary)" stop-opacity="0"/>
+                <stop offset="50%" stop-color="var(--color-text-tertiary)"/>
+                <stop offset="100%" stop-color="var(--color-text-tertiary)" stop-opacity="0"/>
+              </linearGradient>
+              <linearGradient id="panelGradient" x1="35" y1="30" x2="145" y2="115">
+                <stop offset="0%" stop-color="var(--color-bg-tertiary)"/>
+                <stop offset="100%" stop-color="var(--color-bg-secondary)"/>
+              </linearGradient>
+              <linearGradient id="borderGradient" x1="35" y1="30" x2="145" y2="115">
+                <stop offset="0%" stop-color="var(--color-border)" stop-opacity="0.8"/>
+                <stop offset="100%" stop-color="var(--color-border)" stop-opacity="0.3"/>
+              </linearGradient>
+              <linearGradient id="barGradient1" x1="63" y1="105" x2="63" y2="75">
+                <stop offset="0%" stop-color="var(--color-accent-green)"/>
+                <stop offset="100%" stop-color="var(--color-accent-green)" stop-opacity="0.6"/>
+              </linearGradient>
+              <linearGradient id="barGradient2" x1="90" y1="105" x2="90" y2="60">
+                <stop offset="0%" stop-color="var(--color-accent)"/>
+                <stop offset="100%" stop-color="var(--color-accent)" stop-opacity="0.6"/>
+              </linearGradient>
+              <linearGradient id="barGradient3" x1="117" y1="105" x2="117" y2="68">
+                <stop offset="0%" stop-color="#6366f1"/>
+                <stop offset="100%" stop-color="#6366f1" stop-opacity="0.6"/>
+              </linearGradient>
+              <linearGradient id="ringGradient" x1="125" y1="5" x2="165" y2="45">
+                <stop offset="0%" stop-color="var(--color-border)"/>
+                <stop offset="100%" stop-color="var(--color-border)" stop-opacity="0.3"/>
+              </linearGradient>
+            </defs>
+          </svg>
+        </div>
+
+        <!-- 文字内容 -->
+        <div class="empty-content">
+          <h3>暂无用量监控插件</h3>
+          <p>安装插件后即可在此查看 AI 服务的使用量、余额等数据</p>
+        </div>
+
+        <!-- 功能特性提示 -->
+        <div class="empty-features">
+          <div class="feature-item">
+            <div class="feature-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M22 12h-4l-3 9L9 3l-3 9H2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <span>实时监控</span>
+          </div>
+          <div class="feature-item">
+            <div class="feature-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
+                <rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
+                <rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
+                <rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
+              </svg>
+            </div>
+            <span>多源聚合</span>
+          </div>
+          <div class="feature-item">
+            <div class="feature-icon">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+            </div>
+            <span>安全可靠</span>
+          </div>
+        </div>
+
+        <!-- 行动按钮 -->
+        <button class="go-marketplace-btn" @click="goToMarketplace">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+            <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <line x1="3" y1="6" x2="21" y2="6" stroke="currentColor" stroke-width="2"/>
+            <path d="M16 10a4 4 0 01-8 0" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+          <span>前往插件市场</span>
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" class="arrow-icon">
+            <path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </button>
       </div>
 
       <!-- 主插件卡片（有插件时） -->
@@ -255,6 +460,7 @@ onMounted(async () => {
               </div>
               <!-- 插件下拉框 -->
               <div v-if="showPluginDropdown" class="plugin-dropdown">
+                <div class="dropdown-label">切换监控源</div>
                 <div
                   v-for="plugin in plugins"
                   :key="plugin.id"
@@ -262,7 +468,32 @@ onMounted(async () => {
                   :class="{ active: plugin.id === selectedPluginId }"
                   @click="selectPlugin(plugin.id)"
                 >
-                  {{ plugin.name }}
+                  <div class="dropdown-item-icon">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                      <rect x="3" y="4" width="18" height="14" rx="2" stroke="currentColor" stroke-width="2"/>
+                      <line x1="7" y1="11" x2="17" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    </svg>
+                  </div>
+                  <div class="dropdown-item-content">
+                    <span class="dropdown-item-name">{{ plugin.name }}</span>
+                    <span class="dropdown-item-balance"><span class="balance-value" :style="{ color: getPluginBalanceInfo(plugin.id).color }">{{ getPluginBalanceInfo(plugin.id).value }}</span><span class="balance-dot">·</span><span class="balance-label">{{ getPluginBalanceInfo(plugin.id).label }}</span></span>
+                  </div>
+                  <svg
+                    v-if="plugin.id === selectedPluginId"
+                    class="dropdown-check"
+                    width="20"
+                    height="20"
+                    viewBox="0 0 24 24"
+                    fill="none"
+                  >
+                    <path
+                      d="M5 12l5 5L20 7"
+                      stroke="currentColor"
+                      stroke-width="3"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    />
+                  </svg>
                 </div>
               </div>
               <div class="plugin-status">
@@ -347,11 +578,12 @@ onMounted(async () => {
 
         <!-- Balance 类型展示 -->
         <template v-else-if="currentDataType === 'balance' && balanceData">
-          <div class="balance-main">
+          <!-- 主余额显示（仅当有 balance 值时） -->
+          <div v-if="balanceData.balance > 0" class="balance-main">
             <div class="balance-stats">
-              <span class="balance-label">账户余额</span>
+              <span class="balance-label">当前余额</span>
               <div class="balance-value">
-                <span class="balance-amount">{{ formatBalance(balanceData.balance, balanceData.currency) }}</span>
+                <span class="balance-amount accent">{{ formatBalance(balanceData.balance, balanceData.currency) }}</span>
               </div>
             </div>
             <div class="balance-meta">
@@ -361,7 +593,32 @@ onMounted(async () => {
             </div>
           </div>
 
-          <div v-if="balanceData.quota && balanceData.usedQuota !== undefined" class="quota-section">
+          <!-- 多配额子项网格 -->
+          <div v-if="balanceData.items?.length" class="items-grid">
+            <div v-for="item in balanceData.items" :key="item.name" class="item-card">
+              <div class="item-header">
+                <span class="item-name">{{ item.name }}</span>
+                <span v-if="item.refreshable" class="refreshable-badge">可刷新</span>
+                <span class="item-percentage">{{ Math.round(item.percentage) }}%</span>
+              </div>
+              <div class="item-progress">
+                <div
+                  class="item-progress-fill"
+                  :style="{
+                    width: item.percentage + '%',
+                    background: getItemProgressColor(item.percentage)
+                  }"
+                />
+              </div>
+              <div class="item-meta">
+                <span class="item-used">{{ formatItemUsed(item) }}</span>
+                <span class="item-reset">{{ formatItemReset(item) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- 旧版额度使用（无 items 时的 fallback） -->
+          <div v-else-if="balanceData.quota && balanceData.usedQuota !== undefined" class="quota-section">
             <div class="section-header">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                 <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" />
@@ -416,6 +673,7 @@ onMounted(async () => {
 
 /* 空状态 */
 .empty-state {
+  position: relative;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -424,41 +682,218 @@ onMounted(async () => {
   text-align: center;
   background: var(--color-bg-card);
   border-radius: var(--radius-xl);
+  overflow: hidden;
+  min-height: 480px;
 }
 
-.empty-icon {
-  font-size: 4rem;
-  margin-bottom: var(--spacing-lg);
+/* 背景装饰圆圈 */
+.empty-bg-decoration {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
 }
 
-.empty-state h3 {
-  font-size: 1.25rem;
+.decoration-circle {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0.08;
+}
+
+.decoration-circle-1 {
+  width: 300px;
+  height: 300px;
+  background: var(--color-accent);
+  top: -100px;
+  right: -80px;
+  animation: floatSlow 20s ease-in-out infinite;
+}
+
+.decoration-circle-2 {
+  width: 200px;
+  height: 200px;
+  background: var(--color-accent-green);
+  bottom: -60px;
+  left: -40px;
+  animation: floatSlow 15s ease-in-out infinite reverse;
+}
+
+.decoration-circle-3 {
+  width: 120px;
+  height: 120px;
+  background: #6366f1;
+  top: 50%;
+  left: 10%;
+  animation: floatSlow 18s ease-in-out infinite 2s;
+}
+
+@keyframes floatSlow {
+  0%, 100% { transform: translate(0, 0) scale(1); }
+  25% { transform: translate(10px, -15px) scale(1.02); }
+  50% { transform: translate(-5px, 10px) scale(0.98); }
+  75% { transform: translate(-10px, -5px) scale(1.01); }
+}
+
+/* 插画容器 */
+.empty-illustration {
+  position: relative;
+  z-index: 1;
+  margin-bottom: var(--spacing-xl);
+  animation: fadeInUp 0.6s ease-out;
+}
+
+.empty-illustration svg {
+  filter: drop-shadow(0 8px 24px rgba(0, 0, 0, 0.15));
+}
+
+/* 柱状图动画 */
+.empty-illustration .bar {
+  transform-origin: bottom;
+  animation: barGrow 1s ease-out forwards;
+}
+
+.empty-illustration .bar-1 { animation-delay: 0.2s; }
+.empty-illustration .bar-2 { animation-delay: 0.4s; }
+.empty-illustration .bar-3 { animation-delay: 0.6s; }
+
+@keyframes barGrow {
+  0% { transform: scaleY(0); opacity: 0; }
+  100% { transform: scaleY(1); opacity: 1; }
+}
+
+/* 浮动点动画 */
+.empty-illustration .float-dot {
+  animation: floatDot 3s ease-in-out infinite;
+}
+
+.empty-illustration .dot-1 { animation-delay: 0s; }
+.empty-illustration .dot-2 { animation-delay: 1s; }
+.empty-illustration .dot-3 { animation-delay: 2s; }
+
+@keyframes floatDot {
+  0%, 100% { transform: translateY(0); opacity: 0.8; }
+  50% { transform: translateY(-8px); opacity: 1; }
+}
+
+/* 仪表盘圆弧动画 */
+.empty-illustration .gauge-arc {
+  stroke-dasharray: 60;
+  stroke-dashoffset: 60;
+  animation: gaugeArc 1.5s ease-out 0.5s forwards;
+}
+
+@keyframes gaugeArc {
+  to { stroke-dashoffset: 0; }
+}
+
+/* 文字内容 */
+.empty-content {
+  position: relative;
+  z-index: 1;
+  animation: fadeInUp 0.6s ease-out 0.2s backwards;
+}
+
+.empty-content h3 {
+  font-size: 1.375rem;
   font-weight: 600;
   color: var(--color-text);
   margin-bottom: var(--spacing-sm);
+  letter-spacing: -0.01em;
 }
 
-.empty-state p {
-  font-size: 0.875rem;
+.empty-content p {
+  font-size: 0.9375rem;
   color: var(--color-text-secondary);
-  margin-bottom: var(--spacing-xl);
-  max-width: 300px;
+  max-width: 320px;
+  line-height: 1.6;
 }
 
-.go-marketplace-btn {
-  background: var(--color-accent);
-  color: white;
-  border: none;
-  padding: var(--spacing-sm) var(--spacing-xl);
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* 功能特性 */
+.empty-features {
+  display: flex;
+  gap: var(--spacing-xl);
+  margin: var(--spacing-xl) 0;
+  position: relative;
+  z-index: 1;
+  animation: fadeInUp 0.6s ease-out 0.4s backwards;
+}
+
+.feature-item {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  color: var(--color-text-tertiary);
+  font-size: 0.8125rem;
+  transition: color var(--transition-fast);
+}
+
+.feature-item:hover {
+  color: var(--color-text-secondary);
+}
+
+.feature-icon {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-tertiary);
   border-radius: var(--radius-md);
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
+  color: var(--color-text-secondary);
   transition: all var(--transition-fast);
 }
 
+.feature-item:hover .feature-icon {
+  background: var(--color-bg-hover);
+  color: var(--color-accent);
+}
+
+/* 行动按钮 */
+.go-marketplace-btn {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  background: linear-gradient(135deg, var(--color-accent) 0%, #e67e00 100%);
+  color: white;
+  border: none;
+  padding: var(--spacing-md) var(--spacing-xl);
+  border-radius: var(--radius-lg);
+  font-size: 0.9375rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+  box-shadow: 0 4px 14px rgba(249, 115, 22, 0.35);
+  animation: fadeInUp 0.6s ease-out 0.6s backwards;
+}
+
 .go-marketplace-btn:hover {
-  background: var(--color-accent-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(249, 115, 22, 0.45);
+}
+
+.go-marketplace-btn:active {
+  transform: translateY(0);
+}
+
+.go-marketplace-btn .arrow-icon {
+  transition: transform var(--transition-fast);
+}
+
+.go-marketplace-btn:hover .arrow-icon {
+  transform: translateX(4px);
 }
 
 .plugin-card {
@@ -523,32 +958,91 @@ onMounted(async () => {
 .plugin-dropdown {
   position: absolute;
   top: 100%;
-  left: 0;
-  right: 0;
-  background: var(--color-bg-card);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  left: -60px;
+  min-width: 280px;
+  background: #222;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
   z-index: 100;
-  margin-top: var(--spacing-xs);
+  margin-top: var(--spacing-sm);
   overflow: hidden;
 }
 
+.dropdown-label {
+  font-size: 0.8125rem;
+  color: var(--color-text-tertiary);
+  padding: 10px 16px;
+  background: #1a1a1a;
+}
+
 .dropdown-item {
-  padding: var(--spacing-sm) var(--spacing-md);
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
   cursor: pointer;
-  font-size: 0.875rem;
-  color: var(--color-text);
   transition: background var(--transition-fast);
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
 }
 
 .dropdown-item:hover {
-  background: var(--color-bg-hover);
+  background: rgba(255, 255, 255, 0.03);
 }
 
-.dropdown-item.active {
-  background: var(--color-accent);
-  color: white;
+.dropdown-item-icon {
+  width: 36px;
+  height: 36px;
+  background: #1a3a2a;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-accent-green);
+  flex-shrink: 0;
+}
+
+.dropdown-item-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.dropdown-item-name {
+  font-size: 1rem;
+  font-weight: 500;
+  color: var(--color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.dropdown-item-balance {
+  font-size: 0.875rem;
+  line-height: 1.2;
+  white-space: nowrap;
+  display: inline;
+}
+
+.dropdown-item-balance .balance-value,
+.dropdown-item-balance .balance-dot,
+.dropdown-item-balance .balance-label {
+  display: inline;
+}
+
+.dropdown-item-balance .balance-value {
+  font-weight: 500;
+}
+
+.dropdown-item-balance .balance-dot,
+.dropdown-item-balance .balance-label {
+  color: var(--color-text-tertiary);
+}
+
+.dropdown-check {
+  color: var(--color-accent);
+  flex-shrink: 0;
 }
 
 .plugin-status {
@@ -866,6 +1360,10 @@ onMounted(async () => {
   line-height: 1;
 }
 
+.balance-amount.accent {
+  color: var(--color-accent);
+}
+
 .balance-meta {
   display: flex;
   flex-direction: column;
@@ -909,6 +1407,73 @@ onMounted(async () => {
   height: 100%;
   border-radius: 4px;
   transition: width var(--transition-normal);
+}
+
+/* Balance Items 卡片网格 */
+.items-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--spacing-md);
+}
+
+.item-card {
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+}
+
+.item-header {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  margin-bottom: var(--spacing-sm);
+}
+
+.item-name {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.refreshable-badge {
+  background: rgba(249, 115, 22, 0.15);
+  color: var(--color-accent);
+  padding: 2px var(--spacing-sm);
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 500;
+}
+
+.item-percentage {
+  margin-left: auto;
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.item-progress {
+  height: 6px;
+  background: var(--color-bg-secondary);
+  border-radius: 3px;
+  overflow: hidden;
+  margin-bottom: var(--spacing-sm);
+}
+
+.item-progress-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width var(--transition-normal);
+}
+
+.item-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.75rem;
+  color: var(--color-text-tertiary);
+}
+
+.item-reset {
+  color: var(--color-accent);
 }
 
 /* Status 类型样式 */

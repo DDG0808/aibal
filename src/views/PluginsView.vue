@@ -4,12 +4,11 @@
  * Phase 8.2: 插件管理、启用/禁用/删除插件
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue';
-import { useRouter } from 'vue-router';
 import { AppLayout } from '@/components/layout';
+import PluginConfigDialog from '@/components/dialog/PluginConfigDialog.vue';
 import { usePluginStore } from '@/stores';
-import type { HealthStatus } from '@/types';
+import type { HealthStatus, ConfigFieldSchema } from '@/types';
 
-const router = useRouter();
 const pluginStore = usePluginStore();
 
 // 确认对话框状态
@@ -24,6 +23,12 @@ const operationSuccess = ref<string | null>(null);
 // 操作菜单状态
 const activeMenuId = ref<string | null>(null);
 
+// 配置对话框状态
+const showConfigDialog = ref(false);
+const configPluginId = ref<string | null>(null);
+const configPluginName = ref('');
+const configSchema = ref<Record<string, ConfigFieldSchema>>({});
+
 // 从 Store 获取插件列表，并计算健康状态
 const plugins = computed(() => {
   return pluginStore.plugins.map(plugin => {
@@ -32,7 +37,7 @@ const plugins = computed(() => {
       ...plugin,
       calls: health ? Math.floor(health.successRate * 100) : 0,
       successRate: health ? Math.round(health.successRate * 100) : 100,
-      latency: health?.avgLatencyMs ?? 0,
+      latency: health?.avgLatencyMs ? Math.round(health.avgLatencyMs) : 0,
       status: (health?.status ?? 'healthy') as HealthStatus,
     };
   });
@@ -123,13 +128,27 @@ async function executeConfirmAction() {
 
 // 跳转到应用市场
 function goToMarketplace() {
-  router.push('/marketplace');
+  window.location.hash = '#/marketplace';
 }
 
-// 跳转到设置页面配置插件
+// 打开配置弹框
 function configurePlugin(id: string) {
-  router.push({ path: '/settings', query: { plugin: id } });
+  const plugin = pluginStore.plugins.find(p => p.id === id);
+  if (plugin) {
+    configPluginId.value = id;
+    configPluginName.value = plugin.name;
+    configSchema.value = plugin.configSchema ?? {};
+    showConfigDialog.value = true;
+  }
   closeMenu();
+}
+
+// 关闭配置弹框
+function closeConfigDialog() {
+  showConfigDialog.value = false;
+  configPluginId.value = null;
+  configPluginName.value = '';
+  configSchema.value = {};
 }
 
 // 点击空白处关闭菜单
@@ -677,6 +696,16 @@ function getConfirmDescription(): string {
           </div>
         </div>
       </Teleport>
+
+      <!-- 配置对话框 -->
+      <PluginConfigDialog
+        v-if="showConfigDialog && configPluginId"
+        :plugin-id="configPluginId"
+        :plugin-name="configPluginName"
+        :config-schema="configSchema"
+        @close="closeConfigDialog"
+        @saved="closeConfigDialog"
+      />
     </div>
   </AppLayout>
 </template>
@@ -900,7 +929,7 @@ function getConfirmDescription(): string {
 .plugin-right {
   display: flex;
   align-items: center;
-  gap: var(--spacing-lg);
+  gap: var(--spacing-xl);
 }
 
 .plugin-status {
@@ -908,6 +937,8 @@ function getConfirmDescription(): string {
   font-weight: 500;
   padding: var(--spacing-xs) var(--spacing-md);
   border-radius: 9999px;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 .plugin-status.status-healthy {

@@ -372,6 +372,7 @@ impl PluginManifest {
             author: self.author.clone(),
             description: self.description.clone(),
             icon: self.icon.clone(),
+            config_schema: self.config_schema.clone(),
         }
     }
 }
@@ -1977,6 +1978,8 @@ impl PluginManager {
                 }))
             }
             "balance" => {
+                use crate::plugin::types::BalanceItem;
+
                 let balance = result.get("balance").and_then(|v| v.as_f64()).unwrap_or(0.0);
                 let currency = result
                     .get("currency")
@@ -1987,6 +1990,64 @@ impl PluginManager {
                 let used_quota = result.get("usedQuota").and_then(|v| v.as_f64());
                 let expires_at = result.get("expiresAt").and_then(|v| v.as_str()).map(|s| s.to_string());
 
+                // 解析 items 数组（多配额子项）
+                // 支持 items 和 limits 两种字段名（兼容不同插件）
+                let items_array = result.get("items")
+                    .or_else(|| result.get("limits"))
+                    .and_then(|v| v.as_array());
+
+                let items = items_array.map(|arr| {
+                    arr.iter()
+                        .filter_map(|item| {
+                            // name 支持多种字段名：name, label, displayName, limitType
+                            let name = item.get("name")
+                                .or_else(|| item.get("label"))
+                                .or_else(|| item.get("displayName"))
+                                .or_else(|| item.get("limitType"))
+                                .and_then(|v| v.as_str())?
+                                .to_string();
+
+                            // used 支持 used, currentValue
+                            let used = item.get("used")
+                                .or_else(|| item.get("currentValue"))
+                                .and_then(|v| v.as_f64())
+                                .unwrap_or(0.0);
+
+                            // quota 支持 quota, usage, limit
+                            let quota = item.get("quota")
+                                .or_else(|| item.get("usage"))
+                                .or_else(|| item.get("limit"))
+                                .and_then(|v| v.as_f64())
+                                .unwrap_or(0.0);
+
+                            // resetLabel 支持 resetLabel, statusText
+                            let reset_label = item.get("resetLabel")
+                                .or_else(|| item.get("statusText"))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+
+                            // resetTime 支持 resetTime, nextResetTime
+                            let reset_time = item.get("resetTime")
+                                .or_else(|| item.get("nextResetTime"))
+                                .and_then(|v| v.as_str())
+                                .map(|s| s.to_string());
+
+                            Some(BalanceItem {
+                                name,
+                                used,
+                                quota,
+                                percentage: item.get("percentage").and_then(|v| v.as_f64()).unwrap_or(0.0),
+                                currency: item.get("currency").or_else(|| item.get("unit")).and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                reset_time,
+                                reset_label,
+                                expires_at: item.get("expiresAt").and_then(|v| v.as_str()).map(|s| s.to_string()),
+                                remaining_days: item.get("remainingDays").and_then(|v| v.as_i64()),
+                                refreshable: item.get("refreshable").and_then(|v| v.as_bool()).unwrap_or(true),  // 默认可刷新
+                            })
+                        })
+                        .collect()
+                });
+
                 Ok(PluginData::Balance(BalanceData {
                     base,
                     balance,
@@ -1994,6 +2055,7 @@ impl PluginManager {
                     quota,
                     used_quota,
                     expires_at,
+                    items,
                 }))
             }
             "status" => {

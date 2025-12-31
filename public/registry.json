@@ -16,7 +16,7 @@
       "dataType": "balance",
       "tags": ["google", "cloudcode", "quota", "gemini", "claude"],
       "updatedAt": "2025-12-31T10:30:00Z",
-      "downloadUrl": "/plugins/antigravity.zip"
+      "downloadUrl": "https://raw.githubusercontent.com/DDG0808/aibal-plugins/main/plugins/antigravity"
     },
     {
       "id": "88code-balance",
@@ -31,7 +31,7 @@
       "dataType": "balance",
       "tags": ["subscription", "balance", "88code", "quota"],
       "updatedAt": "2025-12-31T20:00:00Z",
-      "downloadUrl": "/plugins/88code-balance.zip"
+      "downloadUrl": "https://raw.githubusercontent.com/DDG0808/aibal-plugins/main/plugins/88code-balance"
     },
     {
       "id": "zhipu-balance",
@@ -46,7 +46,7 @@
       "dataType": "balance",
       "tags": ["ai", "balance", "zhipu", "bigmodel"],
       "updatedAt": "2025-12-31T12:00:00Z",
-      "downloadUrl": "/plugins/zhipu-balance.zip"
+      "downloadUrl": "https://raw.githubusercontent.com/DDG0808/aibal-plugins/main/plugins/zhipu-balance"
     },
     {
       "id": "right-code",
@@ -61,7 +61,7 @@
       "dataType": "balance",
       "tags": ["subscription", "balance", "quota", "rightcodes"],
       "updatedAt": "2025-12-30T18:00:00Z",
-      "downloadUrl": "/plugins/right-code.zip"
+      "downloadUrl": "https://raw.githubusercontent.com/DDG0808/aibal-plugins/main/plugins/right-code"
     }
   ]
 }

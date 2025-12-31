@@ -67,6 +67,7 @@ export {
   PluginDataBase,
   UsageDimension,
   UsageData,
+  BalanceItem,
   BalanceData,
   StatusIndicator,
   StatusData,

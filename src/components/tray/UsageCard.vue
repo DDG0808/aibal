@@ -1,255 +1,182 @@
 <script setup lang="ts">
 /**
- * 使用量卡片组件
- * 显示百分比、进度条、重置时间和流量状态
+ * 配额行组件
+ * 显示单个模型的配额信息：名称、状态、百分比、进度条
  */
 import { computed } from 'vue';
-import type { UsageData } from '@/types';
 
-interface Props {
-  /** 使用量数据 */
-  data: UsageData;
-  /** 插件名称 */
-  pluginName?: string;
-  /** 插件 ID (用于显示标签) */
-  pluginId?: string;
+interface QuotaItem {
+  /** 模型/维度名称 */
+  name: string;
+  /** 使用百分比 (0-100) */
+  percentage: number;
+  /** 状态: available/error/warning */
+  status?: 'available' | 'error' | 'warning';
+  /** 重置时间描述 */
+  resetLabel?: string;
 }
 
-const props = withDefaults(defineProps<Props>(), {
-  pluginName: 'Usage',
-  pluginId: '',
-});
+interface Props {
+  /** 配额项 */
+  item: QuotaItem;
+}
+
+const props = defineProps<Props>();
 
 // 安全的百分比值 (clamp 到 0-100)
 const safePercentage = computed(() => {
-  const p = props.data.percentage;
+  const p = props.item.percentage;
   if (typeof p !== 'number' || isNaN(p)) return 0;
   return Math.max(0, Math.min(100, p));
 });
 
+// 剩余百分比
+const remainingPercentage = computed(() => 100 - safePercentage.value);
+
 // 计算进度条颜色
 const progressColor = computed(() => {
+  if (props.item.status === 'error') return 'var(--color-accent-red)';
   const p = safePercentage.value;
   if (p >= 90) return 'var(--color-accent-red)';
   if (p >= 75) return 'var(--color-accent)';
-  return 'var(--color-accent)';
+  return 'var(--color-accent-green)';
 });
 
-// 计算流量状态
-const trafficStatus = computed(() => {
-  const p = safePercentage.value;
-  if (p >= 90) return { text: 'Critical', color: 'var(--color-accent-red)' };
-  if (p >= 75) return { text: 'High Traffic', color: 'var(--color-accent)' };
-  if (p >= 50) return { text: 'Moderate', color: 'var(--color-text-secondary)' };
-  return { text: 'Low Traffic', color: 'var(--color-accent-green)' };
-});
-
-// 格式化重置时间
-const resetTimeDisplay = computed(() => {
-  if (!props.data.resetTime) return null;
-
-  try {
-    const resetDate = new Date(props.data.resetTime);
-    // 检查日期是否有效
-    if (isNaN(resetDate.getTime())) return null;
-
-    const now = new Date();
-    const diffMs = resetDate.getTime() - now.getTime();
-
-    if (diffMs <= 0) return 'Reset soon';
-
-    const hours = Math.floor(diffMs / (1000 * 60 * 60));
-    const minutes = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
-
-    if (hours > 24) {
-      const days = Math.floor(hours / 24);
-      return `Reset in ${days}d ${hours % 24}h`;
-    }
-
-    return `Reset in ${hours}h ${minutes}m`;
-  } catch {
-    return null;
+// 状态标签配置
+const statusConfig = computed(() => {
+  switch (props.item.status) {
+    case 'error':
+      return { text: '错误', class: 'status-error' };
+    case 'warning':
+      return { text: '警告', class: 'status-warning' };
+    case 'available':
+    default:
+      return { text: '可用', class: 'status-available' };
   }
 });
 </script>
 
 <template>
-  <div class="usage-card">
-    <div class="card-header">
-      <div class="card-title-row">
-        <!-- 图标 -->
-        <div class="card-icon">
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 24 24"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-          >
-            <path
-              d="M3 12h4l3-9 4 18 3-9h4"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            />
-          </svg>
-        </div>
-        <span class="card-title">{{ pluginName }}</span>
+  <div class="quota-row">
+    <!-- 头部：名称 + 状态 + 百分比 -->
+    <div class="quota-header">
+      <span class="quota-name">{{ item.name }}</span>
+      <div class="quota-right">
+        <span
+          class="status-tag"
+          :class="statusConfig.class"
+        >{{ statusConfig.text }}</span>
+        <span class="quota-percentage">{{ Math.round(safePercentage) }}%</span>
       </div>
-      <!-- 插件标签 -->
-      <span
-        v-if="pluginId"
-        class="plugin-tag"
-      >plugin:{{ pluginId }}</span>
     </div>
 
-    <div class="card-content">
-      <!-- 大数字显示 -->
-      <div class="usage-value">
-        <span class="percentage">{{ Math.round(safePercentage) }}%</span>
-        <span class="unit">used</span>
-      </div>
+    <!-- 进度条 -->
+    <div class="progress-bar">
+      <div
+        class="progress-fill"
+        :style="{
+          width: `${safePercentage}%`,
+          backgroundColor: progressColor
+        }"
+      />
+    </div>
 
-      <!-- 进度条 -->
-      <div class="progress-bar">
-        <div
-          class="progress-fill"
-          :style="{
-            width: `${safePercentage}%`,
-            backgroundColor: progressColor
-          }"
-        />
-      </div>
-
-      <!-- 底部信息 -->
-      <div class="card-footer">
-        <span
-          v-if="resetTimeDisplay"
-          class="reset-time"
-        >{{ resetTimeDisplay }}</span>
-        <span
-          class="traffic-status"
-          :style="{ color: trafficStatus.color }"
-        >
-          {{ trafficStatus.text }}
-        </span>
-      </div>
+    <!-- 底部信息 -->
+    <div class="quota-footer">
+      <span class="remaining-info">剩余 {{ Math.round(remainingPercentage) }}%</span>
+      <span
+        v-if="item.resetLabel"
+        class="reset-info"
+      >{{ item.resetLabel }}</span>
     </div>
   </div>
 </template>
 
 <style scoped>
-.usage-card {
-  background: var(--color-bg-secondary);
-  border-radius: var(--radius-lg);
-  padding: var(--spacing-md);
-  position: relative;
-  overflow: hidden;
+.quota-row {
+  padding: var(--spacing-sm) 0;
 }
 
-/* 右上角装饰 */
-.usage-card::after {
-  content: '';
-  position: absolute;
-  top: -20px;
-  right: -20px;
-  width: 100px;
-  height: 100px;
-  background: var(--color-accent);
-  opacity: 0.1;
-  border-radius: 50%;
-  transform: rotate(45deg);
+.quota-row + .quota-row {
+  border-top: 1px solid var(--color-border);
 }
 
-.card-header {
+.quota-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
-  margin-bottom: var(--spacing-md);
+  margin-bottom: var(--spacing-xs);
 }
 
-.card-title-row {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-}
-
-.card-icon {
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--color-accent);
-  border-radius: var(--radius-md);
-  color: white;
-}
-
-.card-title {
+.quota-name {
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--color-text);
 }
 
-.plugin-tag {
-  font-size: 0.625rem;
-  padding: 2px 8px;
-  background: var(--color-bg);
-  border-radius: var(--radius-sm);
-  color: var(--color-text-secondary);
-}
-
-.card-content {
-  position: relative;
-  z-index: 1;
-}
-
-.usage-value {
+.quota-right {
   display: flex;
-  align-items: baseline;
+  align-items: center;
   gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-md);
 }
 
-.percentage {
-  font-size: 2.5rem;
-  font-weight: 700;
+.status-tag {
+  font-size: 0.625rem;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  font-weight: 500;
+}
+
+.status-available {
+  background: rgba(34, 197, 94, 0.15);
+  color: var(--color-accent-green);
+}
+
+.status-error {
+  background: rgba(239, 68, 68, 0.15);
+  color: var(--color-accent-red);
+}
+
+.status-warning {
+  background: rgba(245, 158, 11, 0.15);
+  color: var(--color-accent);
+}
+
+.quota-percentage {
+  font-size: 0.875rem;
+  font-weight: 600;
   color: var(--color-text);
-  line-height: 1;
-}
-
-.unit {
-  font-size: 1rem;
-  color: var(--color-text-secondary);
+  min-width: 36px;
+  text-align: right;
 }
 
 .progress-bar {
-  height: 6px;
-  background: var(--color-bg);
-  border-radius: 3px;
+  height: 4px;
+  background: var(--color-bg-secondary);
+  border-radius: 2px;
   overflow: hidden;
-  margin-bottom: var(--spacing-md);
+  margin-bottom: var(--spacing-xs);
 }
 
 .progress-fill {
   height: 100%;
-  border-radius: 3px;
+  border-radius: 2px;
   transition: width 0.3s ease, background-color 0.3s ease;
 }
 
-.card-footer {
+.quota-footer {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  font-size: 0.75rem;
+  font-size: 0.6875rem;
+  color: var(--color-text-tertiary);
 }
 
-.reset-time {
-  color: var(--color-text-secondary);
+.remaining-info {
+  color: var(--color-accent-green);
 }
 
-.traffic-status {
-  font-weight: 500;
+.reset-info {
+  color: var(--color-text-tertiary);
 }
 </style>

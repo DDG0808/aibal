@@ -1,197 +1,109 @@
 <script setup lang="ts">
 /**
  * 全局设置视图
- * Phase 8.2: 插件配置、通知设置、关于
+ * 包含：插件市场设置、通用设置
  */
-import { ref, computed, watch, onMounted } from 'vue';
-import { useRoute } from 'vue-router';
+import { ref, onMounted } from 'vue';
 import { AppLayout } from '@/components/layout';
-import { IconBolt } from '@/components/icons';
-import { usePluginStore } from '@/stores';
 import { marketplaceService } from '@/services/marketplace';
 
-const route = useRoute();
-const pluginStore = usePluginStore();
-
-// 插件配置值类型（强类型约束，兼容 store/IPC 的 Record<string, unknown>）
-interface PluginConfigValues extends Record<string, unknown> {
-  sessionKey: string;
-  refreshInterval: number;
-  backgroundMonitoring: boolean;
-}
-
-// 当前选中的插件
-const selectedPluginId = ref<string>('');
-
-// 默认配置（用于合并，避免后端缺字段时 UI 绑定异常）
-const defaultConfig: PluginConfigValues = {
-  sessionKey: '',
-  refreshInterval: 30000,
-  backgroundMonitoring: true,
-};
-
-// 插件配置
-const pluginConfig = ref<PluginConfigValues>({ ...defaultConfig });
-
-// 状态
-const hasChanges = ref(false);
-const isSaving = ref(false);
-const isLoadingConfig = ref(false); // 加载配置期间忽略 watch 触发
-const validationError = ref<string | null>(null);
-const fieldErrors = ref<Record<string, string>>({});
-
-// 从 Store 获取插件列表
-const plugins = computed(() => pluginStore.plugins);
-const selectedPlugin = computed(() => plugins.value.find(p => p.id === selectedPluginId.value));
-
-// 监听配置变化（加载期间忽略，使用 flush: 'sync' 确保同步执行）
-watch(pluginConfig, () => {
-  if (isLoadingConfig.value) return;
-  hasChanges.value = true;
-  validationError.value = null;
-  fieldErrors.value = {};
-}, { deep: true, flush: 'sync' });
-
-// 加载插件配置（合并默认值，避免后端缺字段时 UI 绑定异常）
-async function loadPluginConfig(pluginId: string) {
-  isLoadingConfig.value = true;
-  try {
-    const config = await pluginStore.getPluginConfig(pluginId);
-    // 合并默认值 + 后端配置，确保所有字段都有值
-    // 后端返回 Record<string, unknown>，通过默认值合并确保必填字段存在
-    pluginConfig.value = { ...defaultConfig, ...(config ?? {}) } as PluginConfigValues;
-  } finally {
-    isLoadingConfig.value = false;
-    hasChanges.value = false;
-  }
-}
-
-// 保存配置（先验证再保存）
-async function saveConfig() {
-  if (!selectedPluginId.value) return;
-
-  isSaving.value = true;
-  validationError.value = null;
-  fieldErrors.value = {};
-
-  try {
-    // 先验证配置
-    const validation = await pluginStore.validatePluginConfig(
-      selectedPluginId.value,
-      pluginConfig.value
-    );
-
-    if (!validation.valid) {
-      validationError.value = validation.message ?? '配置验证失败';
-      fieldErrors.value = validation.fieldErrors ?? {};
-      return;
-    }
-
-    // 验证通过，保存配置
-    const success = await pluginStore.savePluginConfig(
-      selectedPluginId.value,
-      pluginConfig.value
-    );
-
-    if (success) {
-      hasChanges.value = false;
-    } else {
-      validationError.value = '保存配置失败';
-    }
-  } finally {
-    isSaving.value = false;
-  }
-}
-
-// 恢复默认
-function resetConfig() {
-  pluginConfig.value = { ...defaultConfig };
-  validationError.value = null;
-  fieldErrors.value = {};
-}
-
-// 获取字段错误（使用 Record 格式）
-function getFieldError(field: string): string | undefined {
-  return fieldErrors.value[field];
-}
-
-// 从路由参数加载插件配置
-onMounted(async () => {
-  // 确保插件列表已加载
-  if (pluginStore.plugins.length === 0) {
-    await pluginStore.fetchPlugins();
-  }
-
-  // 从路由获取插件 ID，或使用第一个插件
-  const pluginId = route.query.plugin as string;
-  const firstPlugin = plugins.value[0];
-  if (pluginId && plugins.value.some(p => p.id === pluginId)) {
-    selectedPluginId.value = pluginId;
-  } else if (firstPlugin) {
-    selectedPluginId.value = firstPlugin.id;
-  }
-
-  // 加载配置
-  if (selectedPluginId.value) {
-    await loadPluginConfig(selectedPluginId.value);
-  }
-});
-
-// 面包屑导航
-const breadcrumbs = computed(() => [
-  { label: '我的插件', path: '/plugins' },
-  { label: selectedPlugin.value?.name ?? '插件配置', path: '' },
-]);
-
 // ============================================================================
-// 市场 URL 设置
+// 插件市场设置
 // ============================================================================
 
-const marketplaceUrl = ref('');
-const marketplaceUrlSaving = ref(false);
-const marketplaceUrlMessage = ref<{ type: 'success' | 'error'; text: string } | null>(null);
+const registryUrl = ref('');
+const registryUrlSaving = ref(false);
+const registryMessage = ref<{ type: 'success' | 'error'; text: string } | null>(null);
 
-// 初始化时加载当前 URL
+// ============================================================================
+// 通用设置
+// ============================================================================
+
+const globalRefreshInterval = ref(30); // 分钟
+const backgroundMonitoring = ref(true);
+const generalSaving = ref(false);
+const generalMessage = ref<{ type: 'success' | 'error'; text: string } | null>(null);
+
+// 初始化
 onMounted(() => {
-  marketplaceUrl.value = marketplaceService.getRegistryUrl();
+  // 加载市场 URL
+  registryUrl.value = marketplaceService.getRegistryUrl();
+
+  // 加载通用设置
+  const savedInterval = localStorage.getItem('globalRefreshInterval');
+  if (savedInterval) {
+    globalRefreshInterval.value = parseInt(savedInterval, 10);
+  }
+  const savedBgMonitor = localStorage.getItem('backgroundMonitoring');
+  if (savedBgMonitor !== null) {
+    backgroundMonitoring.value = savedBgMonitor === 'true';
+  }
 });
 
-// 保存市场 URL
-async function saveMarketplaceUrl() {
-  marketplaceUrlSaving.value = true;
-  marketplaceUrlMessage.value = null;
+// 保存市场设置
+async function saveRegistryUrl() {
+  registryUrlSaving.value = true;
+  registryMessage.value = null;
 
   try {
-    // 验证 URL 格式
-    if (marketplaceUrl.value.trim()) {
+    // 验证 URL 格式（如果不为空）
+    if (registryUrl.value.trim()) {
       try {
-        new URL(marketplaceUrl.value.trim());
+        new URL(registryUrl.value.trim());
       } catch {
-        marketplaceUrlMessage.value = { type: 'error', text: 'URL 格式无效' };
+        registryMessage.value = { type: 'error', text: 'URL 格式无效' };
         return;
       }
     }
 
-    // 设置新 URL
-    marketplaceService.setRegistryUrl(marketplaceUrl.value.trim() || null);
-    marketplaceUrlMessage.value = { type: 'success', text: '已保存，刷新市场页面生效' };
+    marketplaceService.setRegistryUrl(registryUrl.value.trim() || null);
+    registryMessage.value = { type: 'success', text: '已保存，刷新市场页面生效' };
 
-    // 3 秒后清除消息
     setTimeout(() => {
-      marketplaceUrlMessage.value = null;
+      registryMessage.value = null;
     }, 3000);
   } finally {
-    marketplaceUrlSaving.value = false;
+    registryUrlSaving.value = false;
   }
 }
 
-// 恢复默认 URL
-function resetMarketplaceUrl() {
+// 恢复市场默认设置
+function resetRegistryUrl() {
   marketplaceService.setRegistryUrl(null);
-  marketplaceUrl.value = marketplaceService.getRegistryUrl();
-  marketplaceUrlMessage.value = { type: 'success', text: '已恢复默认地址' };
+  registryUrl.value = marketplaceService.getRegistryUrl();
+  registryMessage.value = { type: 'success', text: '已恢复默认地址' };
   setTimeout(() => {
-    marketplaceUrlMessage.value = null;
+    registryMessage.value = null;
+  }, 3000);
+}
+
+// 保存通用设置
+async function saveGeneralSettings() {
+  generalSaving.value = true;
+  generalMessage.value = null;
+
+  try {
+    localStorage.setItem('globalRefreshInterval', String(globalRefreshInterval.value));
+    localStorage.setItem('backgroundMonitoring', String(backgroundMonitoring.value));
+    generalMessage.value = { type: 'success', text: '设置已保存' };
+
+    setTimeout(() => {
+      generalMessage.value = null;
+    }, 3000);
+  } finally {
+    generalSaving.value = false;
+  }
+}
+
+// 恢复通用默认设置
+function resetGeneralSettings() {
+  globalRefreshInterval.value = 30;
+  backgroundMonitoring.value = true;
+  localStorage.removeItem('globalRefreshInterval');
+  localStorage.removeItem('backgroundMonitoring');
+  generalMessage.value = { type: 'success', text: '已恢复默认设置' };
+  setTimeout(() => {
+    generalMessage.value = null;
   }, 3000);
 }
 </script>
@@ -203,140 +115,164 @@ function resetMarketplaceUrl() {
     </template>
 
     <div class="settings-page">
-      <!-- 面包屑 -->
-      <nav class="breadcrumbs">
-        <span
-          v-for="(crumb, index) in breadcrumbs"
-          :key="crumb.label"
-        >
-          <router-link
-            v-if="crumb.path"
-            :to="crumb.path"
-            class="breadcrumb-link"
-          >
-            {{ crumb.label }}
-          </router-link>
-          <span
-            v-else
-            class="breadcrumb-current"
-          >{{ crumb.label }}</span>
-          <span
-            v-if="index < breadcrumbs.length - 1"
-            class="breadcrumb-separator"
-          >›</span>
-        </span>
-      </nav>
-
-      <!-- 插件配置卡片 -->
+      <!-- 插件市场设置 -->
       <div class="config-card">
         <div class="config-header">
-          <div
-            class="plugin-icon"
-            style="background: var(--color-accent);"
-          >
-            <IconBolt />
+          <div class="config-icon marketplace-icon">
+            <svg
+              width="24"
+              height="24"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            >
+              <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+              <polyline points="9 22 9 12 15 12 15 22" />
+            </svg>
           </div>
           <div class="config-title">
-            <h2>{{ selectedPlugin?.name }}配置</h2>
-            <p>配置连接参数与监控规则</p>
+            <h3>插件市场设置</h3>
+            <p>配置插件来源与更新策略</p>
           </div>
         </div>
 
         <div class="config-form">
-          <!-- 验证错误提示 -->
+          <!-- 状态消息 -->
           <div
-            v-if="validationError"
-            class="validation-error"
+            v-if="registryMessage"
+            class="status-message"
+            :class="registryMessage.type"
           >
+            {{ registryMessage.text }}
+          </div>
+
+          <!-- Registry URL -->
+          <div class="form-field">
+            <label class="field-label">插件仓库地址 (Registry URL)</label>
+            <div class="field-input-wrapper with-icon">
+              <svg
+                class="input-icon"
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+              >
+                <circle
+                  cx="12"
+                  cy="12"
+                  r="10"
+                />
+                <line
+                  x1="2"
+                  y1="12"
+                  x2="22"
+                  y2="12"
+                />
+                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+              </svg>
+              <input
+                v-model="registryUrl"
+                type="url"
+                class="field-input"
+                placeholder="https://github.com/cuk-team/cuk-plugins"
+              >
+            </div>
+            <p class="field-hint">
+              官方或第三方托管的插件清单文件地址 (manifest.json)。
+            </p>
+          </div>
+        </div>
+
+        <!-- 操作按钮 -->
+        <div class="config-actions">
+          <button
+            class="btn btn-secondary"
+            :disabled="registryUrlSaving"
+            @click="resetRegistryUrl"
+          >
+            恢复默认
+          </button>
+          <button
+            class="btn btn-primary"
+            :disabled="registryUrlSaving"
+            @click="saveRegistryUrl"
+          >
+            {{ registryUrlSaving ? '保存中...' : '保存设置' }}
+          </button>
+        </div>
+      </div>
+
+      <!-- 通用设置 -->
+      <div class="config-card">
+        <div class="config-header">
+          <div class="config-icon general-icon">
             <svg
-              width="16"
-              height="16"
+              width="24"
+              height="24"
               viewBox="0 0 24 24"
               fill="none"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
             >
               <circle
                 cx="12"
                 cy="12"
-                r="10"
-                stroke="currentColor"
-                stroke-width="2"
+                r="3"
               />
-              <line
-                x1="12"
-                y1="8"
-                x2="12"
-                y2="12"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-              />
-              <circle
-                cx="12"
-                cy="16"
-                r="1"
-                fill="currentColor"
-              />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
-            {{ validationError }}
           </div>
+          <div class="config-title">
+            <h3>通用设置</h3>
+            <p>应用行为与后台任务管理</p>
+          </div>
+        </div>
 
-          <!-- 会话密钥 -->
+        <div class="config-form">
+          <!-- 状态消息 -->
           <div
-            class="form-field"
-            :class="{ 'has-error': getFieldError('sessionKey') }"
+            v-if="generalMessage"
+            class="status-message"
+            :class="generalMessage.type"
           >
-            <div class="field-header">
-              <label class="field-label">会话密钥 (Session Key)</label>
-              <span class="field-required">必填</span>
-            </div>
-            <div class="field-input-wrapper">
-              <input
-                v-model="pluginConfig.sessionKey"
-                type="password"
-                class="field-input"
-                placeholder="从 anthropic.com cookie 中获取"
-              >
-              <span class="field-indicator">已加密</span>
-            </div>
-            <p
-              v-if="getFieldError('sessionKey')"
-              class="field-error"
-            >
-              {{ getFieldError('sessionKey') }}
-            </p>
-            <p
-              v-else
-              class="field-hint"
-            >
-              从 anthropic.com cookie 中获取的安全密钥。
-            </p>
+            {{ generalMessage.text }}
           </div>
 
-          <!-- 刷新间隔 -->
+          <!-- 全局刷新间隔 -->
           <div class="form-field">
-            <label class="field-label">刷新间隔 (毫秒)</label>
+            <label class="field-label">全局刷新间隔 (默认)</label>
             <div class="slider-field">
               <input
-                v-model.number="pluginConfig.refreshInterval"
+                v-model.number="globalRefreshInterval"
                 type="range"
-                min="5000"
-                max="60000"
-                step="1000"
+                min="1"
+                max="60"
+                step="1"
                 class="slider"
               >
-              <span class="slider-value">{{ pluginConfig.refreshInterval }} ms</span>
+              <span class="slider-value">{{ globalRefreshInterval }} 分钟</span>
             </div>
+            <p class="field-hint">
+              此设置将作为所有插件的默认刷新频率，插件单独设置可覆盖此值。
+            </p>
           </div>
 
           <!-- 后台监控 -->
           <div class="form-field toggle-field">
             <div class="toggle-info">
               <span class="toggle-label">后台监控</span>
-              <span class="toggle-desc">窗口关闭后继续在后台获取数据</span>
+              <span class="toggle-desc">关闭窗口后继续在后台运行并获取数据</span>
             </div>
             <label class="toggle">
               <input
-                v-model="pluginConfig.backgroundMonitoring"
+                v-model="backgroundMonitoring"
                 type="checkbox"
               >
               <span class="toggle-slider" />
@@ -348,101 +284,17 @@ function resetMarketplaceUrl() {
         <div class="config-actions">
           <button
             class="btn btn-secondary"
-            :disabled="isSaving"
-            @click="resetConfig"
+            :disabled="generalSaving"
+            @click="resetGeneralSettings"
           >
             恢复默认
           </button>
           <button
             class="btn btn-primary"
-            :disabled="!hasChanges || isSaving"
-            @click="saveConfig"
+            :disabled="generalSaving"
+            @click="saveGeneralSettings"
           >
-            {{ isSaving ? '保存中...' : '保存修改' }}
-          </button>
-        </div>
-      </div>
-
-      <!-- 市场 URL 设置卡片 -->
-      <div class="config-card">
-        <div class="config-header">
-          <div
-            class="plugin-icon"
-            style="background: var(--color-accent-blue, #3b82f6);"
-          >
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-            >
-              <circle
-                cx="12"
-                cy="12"
-                r="10"
-              />
-              <line
-                x1="2"
-                y1="12"
-                x2="22"
-                y2="12"
-              />
-              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-            </svg>
-          </div>
-          <div class="config-title">
-            <h2>插件市场设置</h2>
-            <p>配置插件仓库索引地址</p>
-          </div>
-        </div>
-
-        <div class="config-form">
-          <!-- 状态消息 -->
-          <div
-            v-if="marketplaceUrlMessage"
-            class="status-message"
-            :class="marketplaceUrlMessage.type"
-          >
-            {{ marketplaceUrlMessage.text }}
-          </div>
-
-          <!-- 市场 URL -->
-          <div class="form-field">
-            <div class="field-header">
-              <label class="field-label">仓库 URL</label>
-              <span class="field-hint-inline">registry.json 地址</span>
-            </div>
-            <div class="field-input-wrapper">
-              <input
-                v-model="marketplaceUrl"
-                type="url"
-                class="field-input"
-                placeholder="https://example.com/registry.json"
-              >
-            </div>
-            <p class="field-hint">
-              留空使用默认地址。支持 GitHub Raw、GitLab 或自托管仓库。
-            </p>
-          </div>
-        </div>
-
-        <!-- 操作按钮 -->
-        <div class="config-actions">
-          <button
-            class="btn btn-secondary"
-            :disabled="marketplaceUrlSaving"
-            @click="resetMarketplaceUrl"
-          >
-            恢复默认
-          </button>
-          <button
-            class="btn btn-primary"
-            :disabled="marketplaceUrlSaving"
-            @click="saveMarketplaceUrl"
-          >
-            {{ marketplaceUrlSaving ? '保存中...' : '保存' }}
+            {{ generalSaving ? '保存中...' : '保存设置' }}
           </button>
         </div>
       </div>
@@ -456,32 +308,6 @@ function resetMarketplaceUrl() {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xl);
-}
-
-.breadcrumbs {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-lg);
-  font-size: 0.875rem;
-}
-
-.breadcrumb-link {
-  color: var(--color-text-secondary);
-  text-decoration: none;
-  transition: color var(--transition-fast);
-}
-
-.breadcrumb-link:hover {
-  color: var(--color-text);
-}
-
-.breadcrumb-separator {
-  color: var(--color-text-tertiary);
-}
-
-.breadcrumb-current {
-  color: var(--color-text);
 }
 
 .config-card {
@@ -499,7 +325,7 @@ function resetMarketplaceUrl() {
   margin-bottom: var(--spacing-xl);
 }
 
-.plugin-icon {
+.config-icon {
   width: 48px;
   height: 48px;
   border-radius: var(--radius-lg);
@@ -509,7 +335,15 @@ function resetMarketplaceUrl() {
   color: white;
 }
 
-.config-title h2 {
+.marketplace-icon {
+  background: var(--color-accent-blue, #3b82f6);
+}
+
+.general-icon {
+  background: var(--color-bg-tertiary, #374151);
+}
+
+.config-title h3 {
   font-size: 1.125rem;
   font-weight: 600;
   color: var(--color-text);
@@ -528,26 +362,22 @@ function resetMarketplaceUrl() {
   gap: var(--spacing-xl);
 }
 
-.validation-error {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
+.status-message {
   padding: var(--spacing-md);
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
   border-radius: var(--radius-md);
-  color: var(--color-accent-red);
   font-size: 0.875rem;
 }
 
-.form-field.has-error .field-input-wrapper {
-  border: 1px solid var(--color-accent-red);
+.status-message.success {
+  background: rgba(34, 197, 94, 0.1);
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: var(--color-accent-green, #22c55e);
 }
 
-.field-error {
-  font-size: 0.8125rem;
-  color: var(--color-accent-red);
-  margin: 0;
+.status-message.error {
+  background: rgba(239, 68, 68, 0.1);
+  border: 1px solid rgba(239, 68, 68, 0.3);
+  color: var(--color-accent-red, #ef4444);
 }
 
 .form-field {
@@ -556,34 +386,27 @@ function resetMarketplaceUrl() {
   gap: var(--spacing-sm);
 }
 
-.field-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
 .field-label {
   font-size: 0.875rem;
   font-weight: 500;
   color: var(--color-text);
 }
 
-.field-required {
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--color-accent);
-  background: rgba(217, 119, 6, 0.15);
-  padding: 2px var(--spacing-sm);
-  border-radius: var(--radius-sm);
-}
-
 .field-input-wrapper {
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
   background: var(--color-bg-secondary);
   border-radius: var(--radius-md);
   padding: var(--spacing-sm) var(--spacing-md);
+}
+
+.field-input-wrapper.with-icon {
+  gap: var(--spacing-sm);
+}
+
+.input-icon {
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
 }
 
 .field-input {
@@ -600,11 +423,6 @@ function resetMarketplaceUrl() {
 }
 
 .field-input::placeholder {
-  color: var(--color-text-tertiary);
-}
-
-.field-indicator {
-  font-size: 0.75rem;
   color: var(--color-text-tertiary);
 }
 
@@ -656,7 +474,7 @@ function resetMarketplaceUrl() {
   background: var(--color-bg-tertiary);
   padding: var(--spacing-sm) var(--spacing-md);
   border-radius: var(--radius-md);
-  min-width: 100px;
+  min-width: 80px;
   text-align: center;
 }
 
@@ -773,29 +591,5 @@ function resetMarketplaceUrl() {
 .btn-primary:disabled {
   opacity: 0.5;
   cursor: not-allowed;
-}
-
-/* 状态消息 */
-.status-message {
-  padding: var(--spacing-md);
-  border-radius: var(--radius-md);
-  font-size: 0.875rem;
-}
-
-.status-message.success {
-  background: rgba(34, 197, 94, 0.1);
-  border: 1px solid rgba(34, 197, 94, 0.3);
-  color: var(--color-accent-green, #22c55e);
-}
-
-.status-message.error {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  color: var(--color-accent-red, #ef4444);
-}
-
-.field-hint-inline {
-  font-size: 0.75rem;
-  color: var(--color-text-tertiary);
 }
 </style>

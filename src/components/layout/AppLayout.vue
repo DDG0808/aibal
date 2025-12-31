@@ -3,15 +3,13 @@
  * 应用主布局组件
  * Phase 8: 包含侧边栏和主内容区
  */
-import { ref, computed } from 'vue';
+import { computed } from 'vue';
 import AppSidebar from './AppSidebar.vue';
 import { useAppStore } from '@/stores';
 
 const appStore = useAppStore();
 
-// 守护进程状态
-const isDaemonRunning = ref(true);
-const hasNotifications = ref(true);
+// const hasNotifications = ref(true); // 通知按钮暂时隐藏
 
 // 主题状态：深色模式开关
 const isDarkMode = computed(() => appStore.theme === 'dark' ||
@@ -42,15 +40,6 @@ function toggleTheme() {
         </div>
 
         <div class="top-bar-actions">
-          <!-- 守护进程状态 -->
-          <div
-            class="daemon-status"
-            :class="{ running: isDaemonRunning }"
-          >
-            <span class="status-dot" />
-            <span class="status-text">{{ isDaemonRunning ? '守护进程运行中' : '守护进程已停止' }}</span>
-          </div>
-
           <!-- 主题切换 -->
           <button
             class="theme-toggle-btn"
@@ -97,7 +86,7 @@ function toggleTheme() {
             </svg>
           </button>
 
-          <!-- 通知按钮 -->
+          <!-- 通知按钮 (暂时隐藏)
           <button
             class="notification-btn"
             :class="{ 'has-unread': hasNotifications }"
@@ -124,6 +113,7 @@ function toggleTheme() {
               />
             </svg>
           </button>
+          -->
         </div>
       </header>
 
@@ -171,31 +161,6 @@ function toggleTheme() {
   display: flex;
   align-items: center;
   gap: var(--spacing-md);
-}
-
-.daemon-status {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-sm);
-  padding: var(--spacing-sm) var(--spacing-md);
-  background: var(--color-bg-secondary);
-  border-radius: 9999px;
-  font-size: 0.8125rem;
-}
-
-.daemon-status .status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--color-accent-red);
-}
-
-.daemon-status.running .status-dot {
-  background: var(--color-accent-green);
-}
-
-.daemon-status .status-text {
-  color: var(--color-text-secondary);
 }
 
 .theme-toggle-btn {

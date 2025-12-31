@@ -1,11 +1,11 @@
 <script setup lang="ts">
 /**
  * Phase 8.1: 托盘弹窗主视图
- * 集成所有卡片组件，显示插件数据和状态
+ * 集成所有卡片组件，显示插件配额数据
  * 支持浏览器 fallback（开发调试用）
  */
-import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { TrayHeader, UsageCard, BalanceCard, StatusCard, PluginBar } from '@/components/tray';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { TrayHeader, UsageCard, StatusCard, PluginBar } from '@/components/tray';
 
 // Tauri 环境检测
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -23,7 +23,7 @@ async function safeInvoke<T>(cmd: string, args?: Record<string, unknown>): Promi
 async function safeListen<T>(event: string, handler: (event: { payload: T }) => void): Promise<() => void> {
   if (!isTauri) {
     console.info(`[Mock] listen('${event}')`);
-    return () => {}; // 空的取消监听函数
+    return () => {};
   }
   const { listen } = await import('@tauri-apps/api/event');
   return listen<T>(event, handler);
@@ -39,47 +39,74 @@ async function safeEmit(event: string, payload?: unknown): Promise<void> {
   await currentWindow.emit(event, payload);
 }
 
+// 模拟数据 - 配额维度
+interface QuotaDimension {
+  name: string;
+  percentage: number;
+  status: 'available' | 'error' | 'warning';
+  resetLabel?: string;
+}
+
+interface PluginWithQuotas {
+  id: string;
+  name: string;
+  enabled: boolean;
+  healthy: boolean;
+  dimensions: QuotaDimension[];
+}
+
 // 模拟数据
 function getMockResult(cmd: string): unknown {
   switch (cmd) {
     case 'plugin_list':
       return { success: true, data: [
-        { id: 'claude-usage', name: 'Claude Usage', version: '1.0.0', enabled: true, healthy: true, dataType: 'usage' },
+        {
+          id: 'antigravity',
+          name: 'Antigravity',
+          enabled: true,
+          healthy: true,
+          dimensions: [
+            { name: 'Claude Sonnet 4.5', percentage: 5, status: 'available', resetLabel: '15分钟后重置' },
+            { name: 'Claude Opus 4.5 (Thinking)', percentage: 5, status: 'error', resetLabel: '15分钟后重置' },
+            { name: 'Claude Sonnet 4.5 (Thinking)', percentage: 5, status: 'available', resetLabel: '15分钟后重置' },
+          ]
+        },
+        {
+          id: 'openai-tracker',
+          name: 'OpenAI',
+          enabled: true,
+          healthy: true,
+          dimensions: [
+            { name: 'GPT-4o', percentage: 25, status: 'available', resetLabel: '1小时后重置' },
+            { name: 'GPT-4', percentage: 10, status: 'available', resetLabel: '1小时后重置' },
+          ]
+        },
       ]};
     case 'get_all_data':
-      return { success: true, data: [
-        { pluginId: 'claude-usage', dataType: 'usage', percentage: 42, used: 420, limit: 1000, unit: 'msgs', resetLabel: '1h 后重置', lastUpdated: new Date().toISOString(), dimensions: [] },
-      ]};
+      return { success: true, data: [] };
     case 'get_all_health':
       return { success: true, data: [
-        { pluginId: 'claude-usage', status: 'healthy', successRate: 0.99, lastCheck: new Date().toISOString() },
+        { pluginId: 'antigravity', status: 'healthy', successRate: 0.99, lastCheck: new Date().toISOString() },
+        { pluginId: 'openai-tracker', status: 'healthy', successRate: 0.99, lastCheck: new Date().toISOString() },
       ]};
     case 'refresh_all':
       return { success: true, data: [] };
-    case 'get_version':
-      return '2.2 (Browser)';
     default:
       return { success: true, data: null };
   }
 }
+
 import type {
   Result,
-  PluginInfo,
-  PluginData,
-  UsageData,
-  BalanceData,
-  StatusData,
   PluginHealth,
   HealthStatus,
-  StatusIndicator,
 } from '@/types';
 
 // 状态
 const isRefreshing = ref(false);
-const version = ref('2.2');
-const plugins = ref<PluginInfo[]>([]);
-const pluginData = ref<PluginData[]>([]);
+const plugins = ref<PluginWithQuotas[]>([]);
 const pluginHealth = ref<PluginHealth[]>([]);
+const selectedPluginId = ref<string>('');
 const error = ref<string | null>(null);
 
 // 事件监听器清理函数
@@ -97,82 +124,53 @@ const systemStatus = computed<HealthStatus>(() => {
   return 'healthy';
 });
 
-// 已启用的插件 ID 集合
-const enabledPluginIds = computed(() =>
-  new Set(plugins.value.filter(p => p.enabled).map(p => p.id))
+// 健康插件数量
+const healthyPluginCount = computed(() => {
+  return pluginHealth.value.filter(h => h.status === 'healthy').length;
+});
+
+// 已启用的插件列表
+const enabledPlugins = computed(() =>
+  plugins.value.filter(p => p.enabled)
 );
 
-// 分类数据（只显示已启用插件的数据）
-const usageDataList = computed(() =>
-  pluginData.value.filter((d): d is UsageData =>
-    d.dataType === 'usage' && enabledPluginIds.value.has(d.pluginId)
-  )
-);
-
-const balanceDataList = computed(() =>
-  pluginData.value.filter((d): d is BalanceData =>
-    d.dataType === 'balance' && enabledPluginIds.value.has(d.pluginId)
-  )
-);
-
-const statusDataList = computed(() =>
-  pluginData.value.filter((d): d is StatusData =>
-    d.dataType === 'status' && enabledPluginIds.value.has(d.pluginId)
-  )
-);
-
-// 获取插件名称
-const getPluginName = (pluginId: string): string => {
-  const plugin = plugins.value.find(p => p.id === pluginId);
-  return plugin?.name || pluginId;
-};
-
-// 获取插件健康状态
-const getPluginHealthStatus = (pluginId: string): HealthStatus => {
-  const health = pluginHealth.value.find(h => h.pluginId === pluginId);
-  return health?.status || 'healthy';
-};
-
-// 获取系统状态指示器
-const systemStatusIndicator = computed<StatusIndicator>(() => {
-  const firstStatus = statusDataList.value[0];
-  if (firstStatus) {
-    // 使用第一个状态插件的数据
-    return firstStatus.indicator;
+// 当前选中的插件
+const selectedPlugin = computed(() => {
+  if (!selectedPluginId.value && enabledPlugins.value.length > 0) {
+    return enabledPlugins.value[0];
   }
-  // 根据系统状态计算
-  switch (systemStatus.value) {
-    case 'healthy': return 'none';
-    case 'degraded': return 'minor';
-    case 'unhealthy': return 'major';
-    default: return 'unknown';
-  }
+  return enabledPlugins.value.find(p => p.id === selectedPluginId.value) || enabledPlugins.value[0];
+});
+
+// 当前插件的配额维度列表
+const currentQuotas = computed(() => {
+  if (!selectedPlugin.value) return [];
+  return selectedPlugin.value.dimensions || [];
 });
 
 // 加载数据
 const loadData = async () => {
   try {
-    // 并行加载所有数据
-    const [pluginListResult, allDataResult, allHealthResult, versionResult] = await Promise.all([
-      safeInvoke<Result<PluginInfo[]>>('plugin_list'),
-      safeInvoke<Result<PluginData[]>>('get_all_data'),
+    const [pluginListResult, allHealthResult] = await Promise.all([
+      safeInvoke<Result<PluginWithQuotas[]>>('plugin_list'),
       safeInvoke<Result<PluginHealth[]>>('get_all_health'),
-      safeInvoke<string>('get_version').catch(() => '2.2'),
     ]);
 
     if (pluginListResult.success && pluginListResult.data) {
       plugins.value = pluginListResult.data;
-    }
-
-    if (allDataResult.success && allDataResult.data) {
-      pluginData.value = allDataResult.data;
+      // 默认选中第一个启用的插件
+      if (!selectedPluginId.value && plugins.value.length > 0) {
+        const firstEnabled = plugins.value.find(p => p.enabled);
+        if (firstEnabled) {
+          selectedPluginId.value = firstEnabled.id;
+        }
+      }
     }
 
     if (allHealthResult.success && allHealthResult.data) {
       pluginHealth.value = allHealthResult.data;
     }
 
-    version.value = versionResult;
     error.value = null;
   } catch (e) {
     console.error('加载数据失败:', e);
@@ -186,15 +184,8 @@ const handleRefresh = async () => {
 
   isRefreshing.value = true;
   try {
-    const result = await safeInvoke<Result<PluginData[]>>('refresh_all', { force: true });
-    if (result.success && result.data) {
-      pluginData.value = result.data;
-    }
-    // 重新加载健康状态
-    const healthResult = await safeInvoke<Result<PluginHealth[]>>('get_all_health');
-    if (healthResult.success && healthResult.data) {
-      pluginHealth.value = healthResult.data;
-    }
+    await safeInvoke<Result<unknown>>('refresh_all', { force: true });
+    await loadData();
     error.value = null;
   } catch (e) {
     console.error('刷新失败:', e);
@@ -204,13 +195,9 @@ const handleRefresh = async () => {
   }
 };
 
-// 打开设置窗口
-const handleSettings = async () => {
-  try {
-    await safeEmit('open-settings');
-  } catch (e) {
-    console.error('打开设置失败:', e);
-  }
+// 选择插件
+const handleSelectPlugin = (pluginId: string) => {
+  selectedPluginId.value = pluginId;
 };
 
 // 管理插件
@@ -222,26 +209,16 @@ const handleManagePlugins = async () => {
   }
 };
 
-// 插件点击
-const handlePluginClick = (plugin: PluginInfo) => {
-  console.log('Plugin clicked:', plugin.id);
-};
-
 // 监听事件
 const setupEventListeners = async () => {
-  // 监听插件数据更新 (契约: PluginDataUpdatedEvent)
-  const unlistenDataUpdated = await safeListen<{ id: string; data: PluginData }>(
+  // 监听插件数据更新
+  const unlistenDataUpdated = await safeListen<{ id: string; dimensions: QuotaDimension[] }>(
     'ipc:plugin_data_updated',
     (event) => {
-      const { id, data } = event.payload;
-      // 按 pluginId 去重更新
-      const index = pluginData.value.findIndex(
-        d => d.pluginId === id
-      );
-      if (index >= 0) {
-        pluginData.value[index] = data;
-      } else {
-        pluginData.value.push(data);
+      const { id, dimensions } = event.payload;
+      const plugin = plugins.value.find(p => p.id === id);
+      if (plugin) {
+        plugin.dimensions = dimensions;
       }
     }
   );
@@ -265,6 +242,14 @@ const setupEventListeners = async () => {
   unlisteners.push(unlistenHealthChanged);
 };
 
+// 监听插件变化，自动选中有效插件
+watch(enabledPlugins, (newPlugins) => {
+  const firstPlugin = newPlugins[0];
+  if (firstPlugin && !newPlugins.find(p => p.id === selectedPluginId.value)) {
+    selectedPluginId.value = firstPlugin.id;
+  }
+});
+
 // 生命周期
 onMounted(async () => {
   await loadData();
@@ -272,20 +257,20 @@ onMounted(async () => {
 });
 
 onUnmounted(() => {
-  // 清理事件监听器
   unlisteners.forEach(unlisten => unlisten());
 });
 </script>
 
 <template>
   <div class="home-view">
-    <!-- 头部 -->
+    <!-- 头部：插件选择器 -->
     <TrayHeader
-      :version="version"
+      :plugins="enabledPlugins"
+      :selected-plugin-id="selectedPluginId"
       :is-refreshing="isRefreshing"
       :system-status="systemStatus"
+      @select-plugin="handleSelectPlugin"
       @refresh="handleRefresh"
-      @settings="handleSettings"
     />
 
     <!-- 主内容区域 -->
@@ -301,77 +286,37 @@ onUnmounted(() => {
         </button>
       </div>
 
-      <!-- 使用量卡片 -->
-      <UsageCard
-        v-for="usage in usageDataList"
-        :key="usage.pluginId"
-        :data="usage"
-        :plugin-name="getPluginName(usage.pluginId)"
-        :plugin-id="usage.pluginId"
-      />
-
-      <!-- 空状态: 没有使用量数据时显示提示 -->
-      <div
-        v-if="usageDataList.length === 0"
-        class="empty-state"
-      >
-        <div class="empty-state-icon">
-          📊
-        </div>
-        <p class="empty-state-text">
-          暂无使用量数据
-        </p>
-        <p class="empty-state-hint">
-          请先安装并启用插件
-        </p>
-      </div>
-
-      <!-- 余额卡片组 -->
-      <div
-        v-if="balanceDataList.length > 0"
-        class="balance-row"
-      >
-        <BalanceCard
-          v-for="(balance, index) in balanceDataList"
-          :key="balance.pluginId"
-          :data="balance"
-          :plugin-name="getPluginName(balance.pluginId)"
-          :health-status="getPluginHealthStatus(balance.pluginId)"
-          :color-theme="['green', 'blue', 'orange', 'purple'][index % 4] as 'green' | 'blue' | 'orange' | 'purple'"
+      <!-- 配额列表 -->
+      <div class="quota-list">
+        <UsageCard
+          v-for="quota in currentQuotas"
+          :key="quota.name"
+          :item="quota"
         />
-      </div>
 
-      <!-- 空状态: 没有余额数据时显示提示 -->
-      <div
-        v-else
-        class="empty-state"
-      >
-        <div class="empty-state-icon">
-          💰
+        <!-- 空状态 -->
+        <div
+          v-if="currentQuotas.length === 0"
+          class="empty-state"
+        >
+          <p class="empty-state-text">
+            暂无配额数据
+          </p>
+          <p class="empty-state-hint">
+            请先安装并启用插件
+          </p>
         </div>
-        <p class="empty-state-text">
-          暂无余额数据
-        </p>
-        <p class="empty-state-hint">
-          安装余额类插件后将在此显示
-        </p>
       </div>
 
-      <!-- 系统状态卡片 -->
+      <!-- 系统状态 -->
       <StatusCard
-        :indicator="systemStatusIndicator"
-        description="System Status"
-        :monitored-count="plugins.length"
-        expandable
+        :healthy-count="healthyPluginCount"
+        :total-count="plugins.length"
       />
     </main>
 
-    <!-- 底部插件栏（使用真实数据，空时显示空状态） -->
-    <PluginBar
-      :plugins="plugins"
-      @manage="handleManagePlugins"
-      @plugin-click="handlePluginClick"
-    />
+    <!-- 底部管理按钮 -->
+    <PluginBar @manage="handleManagePlugins" />
   </div>
 </template>
 
@@ -387,9 +332,8 @@ onUnmounted(() => {
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-md);
   padding: 0 var(--spacing-md);
-  padding-bottom: var(--spacing-md);
+  padding-bottom: var(--spacing-sm);
   overflow-y: auto;
 }
 
@@ -402,6 +346,7 @@ onUnmounted(() => {
   color: white;
   border-radius: var(--radius-md);
   font-size: 0.75rem;
+  margin-bottom: var(--spacing-md);
 }
 
 .error-banner button {
@@ -418,9 +363,8 @@ onUnmounted(() => {
   background: rgba(255, 255, 255, 0.3);
 }
 
-.balance-row {
-  display: flex;
-  gap: var(--spacing-md);
+.quota-list {
+  flex: 1;
 }
 
 .empty-state {
@@ -429,15 +373,7 @@ onUnmounted(() => {
   align-items: center;
   justify-content: center;
   padding: var(--spacing-xl);
-  background: var(--color-bg-card);
-  border-radius: var(--radius-lg);
   text-align: center;
-}
-
-.empty-state-icon {
-  font-size: 2rem;
-  margin-bottom: var(--spacing-sm);
-  opacity: 0.6;
 }
 
 .empty-state-text {

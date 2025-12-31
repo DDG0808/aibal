@@ -4,11 +4,25 @@
 use crate::plugin::types::{AppError, PluginInfo, Result as IpcResult};
 use crate::plugin::PluginManager;
 use crate::security::{verify_manifest_signature, verify_manifest_files, SecureExtractor};
+use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tempfile::TempDir;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
+
+// ============================================================================
+// 插件状态保存（用于更新时保留配置）
+// ============================================================================
+
+/// 保存的插件状态（配置和启用状态）
+#[derive(Debug, Clone)]
+struct SavedPluginState {
+    /// 插件配置
+    config: HashMap<String, serde_json::Value>,
+    /// 是否启用
+    enabled: bool,
+}
 
 // ============================================================================
 // 错误类型
@@ -147,7 +161,13 @@ impl PluginInstaller {
             .map_err(|e| InstallError::IntegrityFailed(e.to_string()))?;
         log::info!("完整性验证通过: {}", plugin_id);
 
-        // 9. 移动到插件目录
+        // 9. 保存旧插件的配置和启用状态（用于更新时保留）
+        let saved_state = self.save_plugin_state(&plugin_id).await;
+        if saved_state.is_some() {
+            log::info!("已保存插件 {} 的配置和启用状态", plugin_id);
+        }
+
+        // 10. 移动到插件目录
         let target_dir = self.plugin_manager.plugins_dir().join(&plugin_id);
 
         // 如果目录已存在，先备份
@@ -164,14 +184,20 @@ impl PluginInstaller {
         self.move_dir(&extract_dir, &target_dir).await?;
         log::info!("插件已安装到: {:?}", target_dir);
 
-        // 10. 重新加载插件
+        // 11. 重新加载插件
         let plugins = self
             .plugin_manager
             .discover_and_load()
             .await
             .map_err(|e| InstallError::Install(format!("加载插件失败: {}", e)))?;
 
-        // 11. 查找并返回新安装的插件信息
+        // 12. 恢复配置和启用状态
+        if let Some(state) = saved_state {
+            self.restore_plugin_state(&plugin_id, state).await;
+            log::info!("已恢复插件 {} 的配置和启用状态", plugin_id);
+        }
+
+        // 13. 查找并返回新安装的插件信息
         let plugin_info = plugins
             .into_iter()
             .find(|p| p.id == plugin_id)
@@ -179,6 +205,38 @@ impl PluginInstaller {
 
         log::info!("插件安装成功: {} v{}", plugin_info.id, plugin_info.version);
         Ok(plugin_info)
+    }
+
+    /// 保存插件的配置和启用状态
+    async fn save_plugin_state(&self, plugin_id: &str) -> Option<SavedPluginState> {
+        // 获取插件列表，检查插件是否存在
+        let plugins = self.plugin_manager.list_plugins().await;
+        let plugin = plugins.iter().find(|p| p.id == plugin_id)?;
+
+        // 获取配置
+        let config = self.plugin_manager.get_plugin_config(plugin_id).await.unwrap_or_default();
+
+        Some(SavedPluginState {
+            config,
+            enabled: plugin.enabled,
+        })
+    }
+
+    /// 恢复插件的配置和启用状态
+    async fn restore_plugin_state(&self, plugin_id: &str, state: SavedPluginState) {
+        // 恢复配置
+        if !state.config.is_empty() {
+            if let Err(e) = self.plugin_manager.set_plugin_config(plugin_id, state.config).await {
+                log::warn!("恢复插件 {} 配置失败: {}", plugin_id, e);
+            }
+        }
+
+        // 恢复启用状态
+        if state.enabled {
+            if let Err(e) = self.plugin_manager.enable_plugin(plugin_id).await {
+                log::warn!("恢复插件 {} 启用状态失败: {}", plugin_id, e);
+            }
+        }
     }
 
     /// 解析 source，返回下载 URL
