@@ -14,11 +14,30 @@ const pluginStore = usePluginStore();
 // 状态
 const isLoading = ref(false);
 const selectedPluginId = ref('');
+const showPluginDropdown = ref(false);
 
 // 从 Store 获取数据
 const plugins = computed(() => pluginStore.plugins.filter(p => p.dataType === 'usage'));
+const hasPlugins = computed(() => plugins.value.length > 0);
 const selectedPlugin = computed(() => plugins.value.find(p => p.id === selectedPluginId.value));
 const healthData = computed(() => pluginStore.pluginHealth.get(selectedPluginId.value));
+
+// 插件下拉框
+function toggleDropdown() {
+  if (plugins.value.length > 1) {
+    showPluginDropdown.value = !showPluginDropdown.value;
+  }
+}
+
+function selectPlugin(id: string) {
+  selectedPluginId.value = id;
+  showPluginDropdown.value = false;
+}
+
+// 跳转到市场
+function goToMarketplace() {
+  window.location.href = '#/marketplace';
+}
 
 // 获取使用量数据
 const usageData = computed<UsageData>(() => {
@@ -119,8 +138,16 @@ onMounted(async () => {
     </template>
 
     <div class="dashboard">
-      <!-- 主插件卡片 -->
-      <div class="plugin-card">
+      <!-- 空状态 -->
+      <div v-if="!hasPlugins" class="empty-state">
+        <div class="empty-icon">📊</div>
+        <h3>暂无用量监控插件</h3>
+        <p>安装插件后即可在此查看 AI 服务的使用量、余额等数据</p>
+        <button class="go-marketplace-btn" @click="goToMarketplace">前往插件市场</button>
+      </div>
+
+      <!-- 主插件卡片（有插件时） -->
+      <div v-else class="plugin-card">
         <div class="card-header">
           <div class="plugin-info">
             <div
@@ -130,10 +157,12 @@ onMounted(async () => {
               <IconBolt />
             </div>
             <div class="plugin-meta">
-              <div class="plugin-name-row">
+              <div class="plugin-name-row" @click="toggleDropdown">
                 <span class="plugin-name">{{ selectedPlugin?.name }}</span>
                 <svg
+                  v-if="plugins.length > 1"
                   class="dropdown-icon"
+                  :class="{ open: showPluginDropdown }"
                   width="16"
                   height="16"
                   viewBox="0 0 24 24"
@@ -147,6 +176,18 @@ onMounted(async () => {
                     stroke-linejoin="round"
                   />
                 </svg>
+              </div>
+              <!-- 插件下拉框 -->
+              <div v-if="showPluginDropdown" class="plugin-dropdown">
+                <div
+                  v-for="plugin in plugins"
+                  :key="plugin.id"
+                  class="dropdown-item"
+                  :class="{ active: plugin.id === selectedPluginId }"
+                  @click="selectPlugin(plugin.id)"
+                >
+                  {{ plugin.name }}
+                </div>
               </div>
               <div class="plugin-status">
                 <span
@@ -318,6 +359,53 @@ onMounted(async () => {
   max-width: 800px;
 }
 
+/* 空状态 */
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-3xl) var(--spacing-xl);
+  text-align: center;
+  background: var(--color-bg-card);
+  border-radius: var(--radius-xl);
+}
+
+.empty-icon {
+  font-size: 4rem;
+  margin-bottom: var(--spacing-lg);
+}
+
+.empty-state h3 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: var(--spacing-sm);
+}
+
+.empty-state p {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-xl);
+  max-width: 300px;
+}
+
+.go-marketplace-btn {
+  background: var(--color-accent);
+  color: white;
+  border: none;
+  padding: var(--spacing-sm) var(--spacing-xl);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.go-marketplace-btn:hover {
+  background: var(--color-accent-hover);
+}
+
 .plugin-card {
   background: var(--color-bg-card);
   border-radius: var(--radius-xl);
@@ -351,6 +439,7 @@ onMounted(async () => {
   display: flex;
   flex-direction: column;
   gap: var(--spacing-xs);
+  position: relative;
 }
 
 .plugin-name-row {
@@ -368,6 +457,43 @@ onMounted(async () => {
 
 .dropdown-icon {
   color: var(--color-text-tertiary);
+  transition: transform var(--transition-fast);
+}
+
+.dropdown-icon.open {
+  transform: rotate(180deg);
+}
+
+/* 插件下拉框 */
+.plugin-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  right: 0;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  z-index: 100;
+  margin-top: var(--spacing-xs);
+  overflow: hidden;
+}
+
+.dropdown-item {
+  padding: var(--spacing-sm) var(--spacing-md);
+  cursor: pointer;
+  font-size: 0.875rem;
+  color: var(--color-text);
+  transition: background var(--transition-fast);
+}
+
+.dropdown-item:hover {
+  background: var(--color-bg-hover);
+}
+
+.dropdown-item.active {
+  background: var(--color-accent);
+  color: white;
 }
 
 .plugin-status {
