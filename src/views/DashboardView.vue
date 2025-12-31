@@ -7,7 +7,7 @@ import { ref, computed, onMounted } from 'vue';
 import { AppLayout } from '@/components/layout';
 import { IconBolt, IconRefresh } from '@/components/icons';
 import { usePluginStore } from '@/stores';
-import type { UsageData } from '@/types';
+import type { UsageData, BalanceData, StatusData, PluginData } from '@/types';
 
 const pluginStore = usePluginStore();
 
@@ -16,11 +16,17 @@ const isLoading = ref(false);
 const selectedPluginId = ref('');
 const showPluginDropdown = ref(false);
 
-// 从 Store 获取数据
-const plugins = computed(() => pluginStore.plugins.filter(p => p.dataType === 'usage'));
+// 从 Store 获取数据（支持所有数据类型）
+const plugins = computed(() => pluginStore.plugins.filter(p => p.enabled && p.dataType));
 const hasPlugins = computed(() => plugins.value.length > 0);
 const selectedPlugin = computed(() => plugins.value.find(p => p.id === selectedPluginId.value));
 const healthData = computed(() => pluginStore.pluginHealth.get(selectedPluginId.value));
+
+// 当前数据和类型
+const currentData = computed<PluginData | null>(() => {
+  return pluginStore.pluginData.get(selectedPluginId.value) ?? null;
+});
+const currentDataType = computed(() => currentData.value?.dataType ?? selectedPlugin.value?.dataType);
 
 // 插件下拉框
 function toggleDropdown() {
@@ -40,33 +46,96 @@ function goToMarketplace() {
 }
 
 // 获取使用量数据
-const usageData = computed<UsageData>(() => {
-  const data = pluginStore.pluginData.get(selectedPluginId.value);
+const usageData = computed<UsageData | null>(() => {
+  const data = currentData.value;
   if (data && data.dataType === 'usage') {
     return data as UsageData;
   }
-  // 默认空数据
-  return {
-    pluginId: selectedPluginId.value || 'unknown',
-    lastUpdated: new Date().toISOString(),
-    dataType: 'usage',
-    percentage: 0,
-    used: 0,
-    limit: 100,
-    unit: 'msgs',
-    resetTime: '',
-    resetLabel: '--',
-    dimensions: [],
-  };
+  return null;
 });
+
+// 获取余额数据
+const balanceData = computed<BalanceData | null>(() => {
+  const data = currentData.value;
+  if (data && data.dataType === 'balance') {
+    return data as BalanceData;
+  }
+  return null;
+});
+
+// 获取状态数据
+const statusData = computed<StatusData | null>(() => {
+  const data = currentData.value;
+  if (data && data.dataType === 'status') {
+    return data as StatusData;
+  }
+  return null;
+});
+
+// 是否有数据
+const hasData = computed(() => currentData.value !== null);
 
 // 进度条颜色
 const progressColor = computed(() => {
-  const pct = usageData.value.percentage;
+  const pct = usageData.value?.percentage ?? 0;
   if (pct >= 90) return 'var(--color-accent-red)';
   if (pct >= 75) return 'var(--color-accent)';
   return 'var(--color-accent-green)';
 });
+
+// 余额使用百分比颜色
+const balanceColor = computed(() => {
+  if (!balanceData.value?.quota || !balanceData.value?.usedQuota) return 'var(--color-accent-green)';
+  const pct = (balanceData.value.usedQuota / balanceData.value.quota) * 100;
+  if (pct >= 90) return 'var(--color-accent-red)';
+  if (pct >= 75) return 'var(--color-accent)';
+  return 'var(--color-accent-green)';
+});
+
+// 状态指示器颜色（使用契约定义的 StatusIndicator 类型）
+const statusColor = computed(() => {
+  const indicator = statusData.value?.indicator ?? 'unknown';
+  switch (indicator) {
+    case 'none': return 'var(--color-accent-green)';
+    case 'minor': return 'var(--color-accent)';
+    case 'major': return 'var(--color-accent-red)';
+    case 'critical': return 'var(--color-accent-red)';
+    default: return 'var(--color-text-tertiary)';
+  }
+});
+
+// 状态指示器标签
+const statusLabel = computed(() => {
+  const indicator = statusData.value?.indicator ?? 'unknown';
+  switch (indicator) {
+    case 'none': return '运行正常';
+    case 'minor': return '轻微问题';
+    case 'major': return '严重问题';
+    case 'critical': return '服务中断';
+    default: return '状态未知';
+  }
+});
+
+// 格式化余额
+function formatBalance(balance: number, currency?: string): string {
+  if (currency === 'USD') return `$${balance.toFixed(2)}`;
+  if (currency === 'CNY') return `¥${balance.toFixed(2)}`;
+  return balance.toFixed(2);
+}
+
+// 格式化到期时间
+function formatExpiresAt(isoTime?: string): string {
+  if (!isoTime) return '';
+  const expires = new Date(isoTime);
+  const now = new Date();
+  const diff = expires.getTime() - now.getTime();
+  if (diff <= 0) return '已过期';
+  const days = Math.floor(diff / (1000 * 60 * 60 * 24));
+  if (days > 30) return `${Math.floor(days / 30)}个月后到期`;
+  if (days > 0) return `${days}天后到期`;
+  const hours = Math.floor(diff / (1000 * 60 * 60));
+  return `${hours}小时后到期`;
+}
 
 // 健康状态（无数据时显示 unknown 而非 healthy）
 const healthStatus = computed(() => {
@@ -118,16 +187,23 @@ async function refreshData() {
   }
 }
 
+// 跳转到插件配置
+function goToPluginConfig() {
+  if (selectedPluginId.value) {
+    window.location.href = `#/plugins?plugin=${selectedPluginId.value}`;
+  }
+}
+
 // 初始化
 onMounted(async () => {
   // 始终调用 init 确保 plugins/data/health 都已加载
   await pluginStore.init();
-  // 只选择 usage 类型插件（Dashboard 专用于 usage 展示）
-  const firstUsagePlugin = plugins.value[0];
-  if (firstUsagePlugin) {
-    selectedPluginId.value = firstUsagePlugin.id;
+  // 选择第一个有数据类型的插件
+  const firstPlugin = plugins.value[0];
+  if (firstPlugin) {
+    selectedPluginId.value = firstPlugin.id;
   }
-  // 若无 usage 插件，selectedPluginId 保持空，UI 会显示空状态
+  // 若无插件，selectedPluginId 保持空，UI 会显示空状态
 });
 </script>
 
@@ -208,146 +284,125 @@ onMounted(async () => {
           </button>
         </div>
 
-        <!-- 主要使用量显示 -->
-        <div class="usage-main">
-          <div class="usage-stats">
-            <span class="usage-label">当前使用量</span>
-            <div class="usage-value">
-              <span class="percentage">{{ usageData.percentage }}</span>
-              <span class="percent-sign">%</span>
-            </div>
-          </div>
-          <div class="usage-meta">
-            <div class="reset-badge">
-              {{ usageData.resetLabel }}
-            </div>
-            <div class="usage-detail">
-              已用 {{ usageData.used }} / {{ usageData.limit }} {{ usageData.unit }}
-            </div>
-          </div>
+        <!-- 无数据状态 -->
+        <div v-if="!hasData" class="no-data-state">
+          <div class="no-data-icon">⚙️</div>
+          <h4>需要配置插件</h4>
+          <p>请先配置插件的 API 密钥等参数</p>
+          <button class="config-btn" @click="goToPluginConfig">前往配置</button>
         </div>
 
-        <!-- 进度条 -->
-        <div class="progress-bar">
-          <div
-            class="progress-fill"
-            :style="{ width: usageData.percentage + '%', background: progressColor }"
-          />
-        </div>
-
-        <!-- 多维度限额详情 -->
-        <div class="dimensions-section">
-          <div class="section-header">
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-            >
-              <path
-                d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <polyline
-                points="14,2 14,8 20,8"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <line
-                x1="16"
-                y1="13"
-                x2="8"
-                y2="13"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-              <line
-                x1="16"
-                y1="17"
-                x2="8"
-                y2="17"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
-              />
-            </svg>
-            <span>多维度限额详情</span>
+        <!-- Usage 类型展示 -->
+        <template v-else-if="currentDataType === 'usage' && usageData">
+          <div class="usage-main">
+            <div class="usage-stats">
+              <span class="usage-label">当前使用量</span>
+              <div class="usage-value">
+                <span class="percentage">{{ usageData.percentage }}</span>
+                <span class="percent-sign">%</span>
+              </div>
+            </div>
+            <div class="usage-meta">
+              <div class="reset-badge">
+                {{ usageData.resetLabel || '--' }}
+              </div>
+              <div class="usage-detail">
+                已用 {{ usageData.used }} / {{ usageData.limit }} {{ usageData.unit }}
+              </div>
+            </div>
           </div>
 
-          <div class="dimensions-grid">
+          <div class="progress-bar">
             <div
-              v-for="dim in usageData.dimensions"
-              :key="dim.id"
-              class="dimension-card"
-            >
-              <div class="dimension-header">
-                <span class="dimension-label">{{ dim.label }}</span>
-                <span class="dimension-percentage">{{ dim.percentage }}%</span>
-              </div>
-              <div class="dimension-progress">
-                <div
-                  class="dimension-progress-fill"
-                  :style="{
-                    width: dim.percentage + '%',
-                    background: dim.percentage >= 75 ? 'var(--color-accent)' : 'var(--color-accent-green)'
-                  }"
-                />
-              </div>
-              <div class="dimension-meta">
-                <span>{{ dim.used }}/{{ dim.limit }}</span>
-                <span>{{ formatResetTime(dim.resetTime) }}</span>
+              class="progress-fill"
+              :style="{ width: usageData.percentage + '%', background: progressColor }"
+            />
+          </div>
+
+          <div v-if="usageData.dimensions?.length" class="dimensions-section">
+            <div class="section-header">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                <polyline points="14,2 14,8 20,8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+              </svg>
+              <span>多维度限额详情</span>
+            </div>
+            <div class="dimensions-grid">
+              <div v-for="dim in usageData.dimensions" :key="dim.id" class="dimension-card">
+                <div class="dimension-header">
+                  <span class="dimension-label">{{ dim.label }}</span>
+                  <span class="dimension-percentage">{{ dim.percentage }}%</span>
+                </div>
+                <div class="dimension-progress">
+                  <div class="dimension-progress-fill" :style="{ width: dim.percentage + '%', background: dim.percentage >= 75 ? 'var(--color-accent)' : 'var(--color-accent-green)' }" />
+                </div>
+                <div class="dimension-meta">
+                  <span>{{ dim.used }}/{{ dim.limit }}</span>
+                  <span>{{ formatResetTime(dim.resetTime) }}</span>
+                </div>
               </div>
             </div>
           </div>
-        </div>
+        </template>
+
+        <!-- Balance 类型展示 -->
+        <template v-else-if="currentDataType === 'balance' && balanceData">
+          <div class="balance-main">
+            <div class="balance-stats">
+              <span class="balance-label">账户余额</span>
+              <div class="balance-value">
+                <span class="balance-amount">{{ formatBalance(balanceData.balance, balanceData.currency) }}</span>
+              </div>
+            </div>
+            <div class="balance-meta">
+              <div v-if="balanceData.expiresAt" class="expires-badge">
+                {{ formatExpiresAt(balanceData.expiresAt) }}
+              </div>
+            </div>
+          </div>
+
+          <div v-if="balanceData.quota && balanceData.usedQuota !== undefined" class="quota-section">
+            <div class="section-header">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" />
+                <path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              </svg>
+              <span>额度使用</span>
+            </div>
+            <div class="quota-info">
+              <div class="quota-used">
+                已用 {{ balanceData.usedQuota }} / {{ balanceData.quota }} {{ balanceData.currency }}
+              </div>
+              <div class="quota-progress">
+                <div class="quota-progress-fill" :style="{ width: (balanceData.usedQuota / balanceData.quota * 100) + '%', background: balanceColor }" />
+              </div>
+            </div>
+          </div>
+        </template>
+
+        <!-- Status 类型展示 -->
+        <template v-else-if="currentDataType === 'status' && statusData">
+          <div class="status-main">
+            <div class="status-indicator-large" :style="{ background: statusColor }">
+              <span class="status-icon">{{ statusData.indicator === 'none' ? '✓' : '!' }}</span>
+            </div>
+            <div class="status-info">
+              <span class="status-title">{{ statusLabel }}</span>
+              <p v-if="statusData.description" class="status-description">{{ statusData.description }}</p>
+            </div>
+          </div>
+        </template>
 
         <!-- 连接监控 -->
         <div class="monitoring-section">
           <div class="section-header">
-            <svg
-              width="16"
-              height="16"
-              viewBox="0 0 24 24"
-              fill="none"
-            >
-              <rect
-                x="2"
-                y="3"
-                width="20"
-                height="14"
-                rx="2"
-                stroke="currentColor"
-                stroke-width="2"
-              />
-              <line
-                x1="8"
-                y1="21"
-                x2="16"
-                y2="21"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-              />
-              <line
-                x1="12"
-                y1="17"
-                x2="12"
-                y2="21"
-                stroke="currentColor"
-                stroke-width="2"
-              />
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+              <rect x="2" y="3" width="20" height="14" rx="2" stroke="currentColor" stroke-width="2" />
+              <line x1="8" y1="21" x2="16" y2="21" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+              <line x1="12" y1="17" x2="12" y2="21" stroke="currentColor" stroke-width="2" />
             </svg>
             <span>连接监控 (RELIABILITY LAYER)</span>
           </div>
-          <!-- 可扩展的监控信息区域 -->
         </div>
       </div>
     </div>
@@ -735,5 +790,166 @@ onMounted(async () => {
   justify-content: space-between;
   font-size: 0.75rem;
   color: var(--color-text-tertiary);
+}
+
+/* 无数据状态 */
+.no-data-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--spacing-xl);
+  text-align: center;
+}
+
+.no-data-icon {
+  font-size: 3rem;
+  margin-bottom: var(--spacing-md);
+}
+
+.no-data-state h4 {
+  font-size: 1rem;
+  font-weight: 600;
+  color: var(--color-text);
+  margin-bottom: var(--spacing-xs);
+}
+
+.no-data-state p {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-lg);
+}
+
+.config-btn {
+  background: var(--color-accent);
+  color: white;
+  border: none;
+  padding: var(--spacing-sm) var(--spacing-lg);
+  border-radius: var(--radius-md);
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.config-btn:hover {
+  background: var(--color-accent-hover);
+}
+
+/* Balance 类型样式 */
+.balance-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  margin-bottom: var(--spacing-xl);
+}
+
+.balance-stats {
+  display: flex;
+  flex-direction: column;
+}
+
+.balance-label {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-sm);
+}
+
+.balance-value {
+  display: flex;
+  align-items: baseline;
+}
+
+.balance-amount {
+  font-size: 3rem;
+  font-weight: 700;
+  color: var(--color-text);
+  line-height: 1;
+}
+
+.balance-meta {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.expires-badge {
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: var(--radius-md);
+  font-size: 0.8125rem;
+}
+
+.quota-section {
+  margin-top: var(--spacing-xl);
+  padding-top: var(--spacing-xl);
+  border-top: 1px solid var(--color-border);
+}
+
+.quota-info {
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-lg);
+  padding: var(--spacing-lg);
+}
+
+.quota-used {
+  font-size: 0.875rem;
+  color: var(--color-text);
+  margin-bottom: var(--spacing-sm);
+}
+
+.quota-progress {
+  height: 8px;
+  background: var(--color-bg-secondary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.quota-progress-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width var(--transition-normal);
+}
+
+/* Status 类型样式 */
+.status-main {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xl);
+  padding: var(--spacing-xl) 0;
+}
+
+.status-indicator-large {
+  width: 80px;
+  height: 80px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.status-icon {
+  font-size: 2rem;
+  color: white;
+}
+
+.status-info {
+  flex: 1;
+}
+
+.status-title {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--color-text);
+  display: block;
+  margin-bottom: var(--spacing-sm);
+}
+
+.status-description {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  margin: 0;
+  line-height: 1.5;
 }
 </style>

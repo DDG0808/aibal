@@ -97,17 +97,28 @@ const systemStatus = computed<HealthStatus>(() => {
   return 'healthy';
 });
 
-// 分类数据
+// 已启用的插件 ID 集合
+const enabledPluginIds = computed(() =>
+  new Set(plugins.value.filter(p => p.enabled).map(p => p.id))
+);
+
+// 分类数据（只显示已启用插件的数据）
 const usageDataList = computed(() =>
-  pluginData.value.filter((d): d is UsageData => d.dataType === 'usage')
+  pluginData.value.filter((d): d is UsageData =>
+    d.dataType === 'usage' && enabledPluginIds.value.has(d.pluginId)
+  )
 );
 
 const balanceDataList = computed(() =>
-  pluginData.value.filter((d): d is BalanceData => d.dataType === 'balance')
+  pluginData.value.filter((d): d is BalanceData =>
+    d.dataType === 'balance' && enabledPluginIds.value.has(d.pluginId)
+  )
 );
 
 const statusDataList = computed(() =>
-  pluginData.value.filter((d): d is StatusData => d.dataType === 'status')
+  pluginData.value.filter((d): d is StatusData =>
+    d.dataType === 'status' && enabledPluginIds.value.has(d.pluginId)
+  )
 );
 
 // 获取插件名称
