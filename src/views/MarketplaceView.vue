@@ -12,6 +12,27 @@ import type { MarketplacePlugin, InstallStatus } from '@/types';
 
 const pluginStore = usePluginStore();
 
+// 比较版本号（简单 semver 比较：a < b 返回 -1，a = b 返回 0，a > b 返回 1）
+function compareVersions(a: string, b: string): number {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  const len = Math.max(pa.length, pb.length);
+  for (let i = 0; i < len; i++) {
+    const na = pa[i] ?? 0;
+    const nb = pb[i] ?? 0;
+    if (na < nb) return -1;
+    if (na > nb) return 1;
+  }
+  return 0;
+}
+
+// 检查插件是否有可用更新
+function hasUpdate(pluginId: string, marketVersion: string): boolean {
+  const installedVersion = pluginStore.getInstalledVersion(pluginId);
+  if (!installedVersion) return false;
+  return compareVersions(installedVersion, marketVersion) < 0;
+}
+
 // debounce timer
 let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -158,8 +179,12 @@ watch(searchQuery, (newVal) => {
 // 安装状态
 // ============================================================================
 
-function getPluginStatus(pluginId: string): InstallStatus | 'installed' | 'confirm' {
+function getPluginStatus(pluginId: string, marketVersion?: string): InstallStatus | 'installed' | 'update' | 'confirm' {
   if (pluginStore.isInstalled(pluginId)) {
+    // 检查是否有可用更新
+    if (marketVersion && hasUpdate(pluginId, marketVersion)) {
+      return 'update';
+    }
     return 'installed';
   }
   if (pluginStore.needsSignatureConfirm(pluginId)) {
@@ -168,11 +193,13 @@ function getPluginStatus(pluginId: string): InstallStatus | 'installed' | 'confi
   return pluginStore.getInstallStatus(pluginId);
 }
 
-function getButtonText(pluginId: string): string {
-  const status = getPluginStatus(pluginId);
+function getButtonText(pluginId: string, marketVersion?: string): string {
+  const status = getPluginStatus(pluginId, marketVersion);
   switch (status) {
     case 'installed':
       return '已安装';
+    case 'update':
+      return '更新';
     case 'downloading':
       return '下载中...';
     case 'installing':
@@ -188,13 +215,14 @@ function getButtonText(pluginId: string): string {
   }
 }
 
-function isButtonDisabled(pluginId: string): boolean {
-  const status = getPluginStatus(pluginId);
+function isButtonDisabled(pluginId: string, marketVersion?: string): boolean {
+  const status = getPluginStatus(pluginId, marketVersion);
+  // 'update' 状态可点击，'installed' 状态禁用
   return status === 'installed' || status === 'downloading' || status === 'installing' || status === 'success';
 }
 
-function shouldShowIcon(pluginId: string): boolean {
-  const status = getPluginStatus(pluginId);
+function shouldShowIcon(pluginId: string, marketVersion?: string): boolean {
+  const status = getPluginStatus(pluginId, marketVersion);
   return status === 'idle' || status === 'error';
 }
 
@@ -205,10 +233,12 @@ function shouldShowIcon(pluginId: string): boolean {
 const showSignatureDialog = ref(false);
 const confirmingPluginId = ref<string | null>(null);
 const confirmingPluginName = ref<string>('');
+const confirmingIsUpdate = ref(false);
 
-function showSignatureConfirmDialog(pluginId: string, pluginName: string) {
+function showSignatureConfirmDialog(pluginId: string, pluginName: string, isUpdate = false) {
   confirmingPluginId.value = pluginId;
   confirmingPluginName.value = pluginName;
+  confirmingIsUpdate.value = isUpdate;
   showSignatureDialog.value = true;
 }
 
@@ -219,28 +249,46 @@ function closeSignatureDialog() {
   showSignatureDialog.value = false;
   confirmingPluginId.value = null;
   confirmingPluginName.value = '';
+  confirmingIsUpdate.value = false;
 }
 
 async function confirmInstallUnsigned() {
   if (!confirmingPluginId.value) return;
 
   const pluginId = confirmingPluginId.value;
+  const isUpdate = confirmingIsUpdate.value;
   showSignatureDialog.value = false;
   confirmingPluginId.value = null;
   confirmingPluginName.value = '';
+  confirmingIsUpdate.value = false;
 
-  // 跳过签名验证重新安装
+  // 跳过签名验证重新安装（传递 isUpdate 参数）
   try {
-    await pluginStore.installMarketplacePlugin(pluginId, true);
+    await pluginStore.installMarketplacePlugin(pluginId, true, isUpdate);
   } catch (e) {
     console.error('Install failed:', e);
   }
 }
 
-async function installPlugin(pluginId: string) {
-  const status = getPluginStatus(pluginId);
+async function installPlugin(pluginId: string, marketVersion?: string) {
+  const status = getPluginStatus(pluginId, marketVersion);
 
   if (status === 'installed' || status === 'downloading' || status === 'installing') {
+    return;
+  }
+
+  // 如果有可用更新，执行更新操作（复用安装流程，isUpdate=true）
+  if (status === 'update') {
+    try {
+      const result = await pluginStore.installMarketplacePlugin(pluginId, false, true);
+      // 如果需要签名确认，显示对话框（传递 isUpdate=true）
+      if (result === 'need_confirm') {
+        const plugin = displayPlugins.value.find(p => p.id === pluginId);
+        showSignatureConfirmDialog(pluginId, plugin?.name ?? pluginId, true);
+      }
+    } catch (e) {
+      console.error('Update failed:', e);
+    }
     return;
   }
 
@@ -452,20 +500,21 @@ const showNoResults = computed(() => {
               <button
                 class="install-btn"
                 :class="{
-                  'is-installed': getPluginStatus(plugin.id) === 'installed',
-                  'is-loading': ['downloading', 'installing'].includes(getPluginStatus(plugin.id)),
-                  'is-success': getPluginStatus(plugin.id) === 'success',
-                  'is-error': getPluginStatus(plugin.id) === 'error',
+                  'is-installed': getPluginStatus(plugin.id, plugin.version) === 'installed',
+                  'is-update': getPluginStatus(plugin.id, plugin.version) === 'update',
+                  'is-loading': ['downloading', 'installing'].includes(getPluginStatus(plugin.id, plugin.version)),
+                  'is-success': getPluginStatus(plugin.id, plugin.version) === 'success',
+                  'is-error': getPluginStatus(plugin.id, plugin.version) === 'error',
                 }"
-                :disabled="isButtonDisabled(plugin.id)"
-                :aria-label="'安装 ' + plugin.name"
-                @click="installPlugin(plugin.id)"
+                :disabled="isButtonDisabled(plugin.id, plugin.version)"
+                :aria-label="getPluginStatus(plugin.id, plugin.version) === 'update' ? '更新 ' + plugin.name : '安装 ' + plugin.name"
+                @click="installPlugin(plugin.id, plugin.version)"
               >
-                <IconDownload v-if="shouldShowIcon(plugin.id)" />
+                <IconDownload v-if="shouldShowIcon(plugin.id, plugin.version)" />
                 <span
                   v-else
                   class="btn-text"
-                >{{ getButtonText(plugin.id) }}</span>
+                >{{ getButtonText(plugin.id, plugin.version) }}</span>
               </button>
             </div>
             <div class="plugin-footer">
@@ -756,6 +805,16 @@ const showNoResults = computed(() => {
 .install-btn.is-installed {
   color: var(--color-success);
   font-size: 0.75rem;
+}
+
+.install-btn.is-update {
+  color: var(--color-accent);
+  font-size: 0.75rem;
+  background: color-mix(in srgb, var(--color-accent) 15%, transparent);
+}
+
+.install-btn.is-update:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-accent) 25%, transparent);
 }
 
 .install-btn.is-loading {

@@ -67,8 +67,8 @@ onUnmounted(() => {
     <AppSidebar />
 
     <main class="main-content">
-      <!-- 顶部状态栏 -->
-      <header class="top-bar">
+      <!-- 顶部状态栏（可拖动） -->
+      <header class="top-bar" data-tauri-drag-region>
         <div class="page-title">
           <slot name="title">
             <h1>页面标题</h1>
@@ -180,9 +180,13 @@ onUnmounted(() => {
   align-items: center;
   justify-content: space-between;
   padding: var(--spacing-md) var(--spacing-xl);
+  padding-top: 8px !important;
+  padding-bottom: 8px !important;
   background: var(--color-bg);
   border-bottom: 1px solid var(--color-border);
-  min-height: 60px;
+  min-height: 38px;
+  -webkit-app-region: drag; /* 顶部栏可拖动 */
+  -webkit-user-select: none;
 }
 
 .page-title h1,
@@ -197,6 +201,7 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: var(--spacing-md);
+  -webkit-app-region: no-drag; /* 确保按钮可点击 */
 }
 
 .theme-toggle-btn {

@@ -864,6 +864,14 @@ export const usePluginStore = defineStore('plugin', () => {
   }
 
   /**
+   * 获取已安装插件的版本号
+   */
+  function getInstalledVersion(pluginId: string): string | undefined {
+    const plugin = plugins.value.find(p => p.id === pluginId);
+    return plugin?.version;
+  }
+
+  /**
    * 获取插件安装状态
    */
   function getInstallStatus(pluginId: string): InstallStatus {
@@ -884,16 +892,17 @@ export const usePluginStore = defineStore('plugin', () => {
   const pendingSignatureConfirm = ref<Map<string, boolean>>(new Map());
 
   /**
-   * 从市场安装插件
+   * 从市场安装或更新插件
    * 使用返回的 PluginInfo 直接更新本地列表（优化：避免额外 fetchPlugins）
    *
    * @param pluginId 插件 ID
    * @param skipSignature 是否跳过签名验证（用户确认后传 true）
+   * @param isUpdate 是否为更新操作（跳过已安装检查）
    * @returns 'success' | 'need_confirm' | 'error'
    */
-  async function installMarketplacePlugin(pluginId: string, skipSignature = false): Promise<'success' | 'need_confirm' | 'error'> {
-    // 已安装检查
-    if (isInstalled(pluginId)) {
+  async function installMarketplacePlugin(pluginId: string, skipSignature = false, isUpdate = false): Promise<'success' | 'need_confirm' | 'error'> {
+    // 已安装检查（更新操作跳过此检查）
+    if (!isUpdate && isInstalled(pluginId)) {
       return 'success';
     }
 
@@ -922,9 +931,14 @@ export const usePluginStore = defineStore('plugin', () => {
         // 设置安装中状态
         installingPlugins.value.set(pluginId, 'installing');
 
-        // 使用返回的 PluginInfo 直接添加到本地列表（避免额外 fetchPlugins）
+        // 使用返回的 PluginInfo 更新本地列表（避免额外 fetchPlugins）
         const newPlugin = result.data;
-        if (!plugins.value.some(p => p.id === newPlugin.id)) {
+        const existingIndex = plugins.value.findIndex(p => p.id === newPlugin.id);
+        if (existingIndex !== -1) {
+          // 更新已有插件
+          plugins.value[existingIndex] = newPlugin;
+        } else {
+          // 添加新插件
           plugins.value.push(newPlugin);
         }
 
@@ -1051,6 +1065,7 @@ export const usePluginStore = defineStore('plugin', () => {
     setupPluginEnabledListener,
     // 安装方法
     isInstalled,
+    getInstalledVersion,
     getInstallStatus,
     getInstallError,
     installMarketplacePlugin,

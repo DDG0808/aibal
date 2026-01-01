@@ -1,7 +1,7 @@
 {
   "version": "1.2.0",
   "lastUpdated": "2025-12-31T10:30:00Z",
-  "featured": ["antigravity", "88code-balance", "zhipu-balance", "right-code"],
+  "featured": ["antigravity", "88code-balance", "88code-balance-test", "zhipu-balance", "right-code"],
   "plugins": [
     {
       "id": "antigravity",
@@ -32,6 +32,21 @@
       "tags": ["subscription", "balance", "88code", "quota"],
       "updatedAt": "2025-12-31T20:00:00Z",
       "downloadUrl": "https://raw.githubusercontent.com/DDG0808/aibal-plugins/main/plugins/88code-balance"
+    },
+    {
+      "id": "88code-balance-test",
+      "name": "88Code 订阅余额 (测试)",
+      "description": "测试插件 - 查询 88Code 订阅套餐的额度使用情况、剩余天数和重置状态（支持按量付费模式）",
+      "author": "CUK Official",
+      "version": "1.0.1",
+      "downloads": 0,
+      "verified": false,
+      "icon": "🧪",
+      "pluginType": "data",
+      "dataType": "balance",
+      "tags": ["subscription", "balance", "88code", "quota", "test"],
+      "updatedAt": "2026-01-01T16:35:00Z",
+      "downloadUrl": "http://localhost:1420/plugins/88code-balance-test.zip"
     },
     {
       "id": "zhipu-balance",

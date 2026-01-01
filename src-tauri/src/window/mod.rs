@@ -39,6 +39,10 @@ pub struct WindowConfig {
     pub center: bool,
     /// 是否在任务栏/Dock 中隐藏
     pub skip_taskbar: bool,
+    /// macOS 标题栏样式
+    pub title_bar_style: Option<tauri::TitleBarStyle>,
+    /// 是否隐藏标题
+    pub hidden_title: bool,
 }
 
 impl WindowType {
@@ -56,7 +60,9 @@ impl WindowType {
                 transparent: true,
                 always_on_top: true,
                 center: false,
-                skip_taskbar: true, // 弹窗不显示在任务栏
+                skip_taskbar: true,
+                title_bar_style: None,
+                hidden_title: true,
             },
             WindowType::Dashboard => WindowConfig {
                 label: "dashboard",
@@ -69,7 +75,10 @@ impl WindowType {
                 transparent: false,
                 always_on_top: false,
                 center: true,
-                skip_taskbar: false, // 主窗口显示在任务栏
+                skip_taskbar: false,
+                // Overlay 模式：内容延伸到标题栏，traffic lights 覆盖在内容上
+                title_bar_style: Some(tauri::TitleBarStyle::Overlay),
+                hidden_title: true,
             },
             WindowType::Settings => WindowConfig {
                 label: "settings",
@@ -82,7 +91,9 @@ impl WindowType {
                 transparent: false,
                 always_on_top: false,
                 center: true,
-                skip_taskbar: false, // 设置窗口显示在任务栏
+                skip_taskbar: false,
+                title_bar_style: None,
+                hidden_title: false,
             },
             WindowType::Wizard => WindowConfig {
                 label: "wizard",
@@ -95,7 +106,9 @@ impl WindowType {
                 transparent: false,
                 always_on_top: true,
                 center: true,
-                skip_taskbar: true, // 向导窗口不显示在任务栏
+                skip_taskbar: true,
+                title_bar_style: None,
+                hidden_title: false,
             },
             WindowType::About => WindowConfig {
                 label: "about",
@@ -108,7 +121,9 @@ impl WindowType {
                 transparent: false,
                 always_on_top: true,
                 center: true,
-                skip_taskbar: true, // 关于窗口不显示在任务栏
+                skip_taskbar: true,
+                title_bar_style: None,
+                hidden_title: false,
             },
         }
     }
@@ -150,7 +165,13 @@ impl WindowManager {
         .transparent(config.transparent)
         .always_on_top(config.always_on_top)
         .skip_taskbar(config.skip_taskbar)
+        .hidden_title(config.hidden_title)
         .visible(true);
+
+        // macOS 标题栏样式
+        if let Some(style) = config.title_bar_style {
+            builder = builder.title_bar_style(style);
+        }
 
         if config.center {
             builder = builder.center();
@@ -159,6 +180,7 @@ impl WindowManager {
         match builder.build() {
             Ok(window) => {
                 log::info!("窗口已创建: {}", config.label);
+
                 Some(window)
             }
             Err(e) => {
@@ -247,7 +269,7 @@ impl WindowManager {
             config.url
         };
 
-        let builder = tauri::WebviewWindowBuilder::new(
+        let mut builder = tauri::WebviewWindowBuilder::new(
             app,
             config.label,
             tauri::WebviewUrl::App(url.into()),
@@ -259,8 +281,14 @@ impl WindowManager {
         .transparent(config.transparent)
         .always_on_top(config.always_on_top)
         .skip_taskbar(config.skip_taskbar)
+        .hidden_title(config.hidden_title)
         .visible(true)
         .center();
+
+        // macOS 标题栏样式
+        if let Some(style) = config.title_bar_style {
+            builder = builder.title_bar_style(style);
+        }
 
         match builder.build() {
             Ok(window) => {

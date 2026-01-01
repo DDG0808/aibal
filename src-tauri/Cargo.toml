@@ -87,9 +87,11 @@ rand = "0.8"  # 用于密钥生成示例
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
 
-# macOS Keychain
+# macOS Keychain & Window Customization
 [target.'cfg(target_os = "macos")'.dependencies]
 security-framework = "3"
+cocoa = "0.26"
+objc = "0.2"
 
 [features]
 default = ["custom-protocol"]

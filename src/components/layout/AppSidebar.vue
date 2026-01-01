@@ -50,6 +50,9 @@ function handleKeydown(event: KeyboardEvent, path: string) {
     class="sidebar"
     :class="{ collapsed: isCollapsed }"
   >
+    <!-- macOS 原生控制按钮区域（可拖动） -->
+    <div class="window-titlebar" data-tauri-drag-region />
+
     <!-- 应用标题 -->
     <div class="sidebar-header">
       <div class="app-logo">
@@ -354,11 +357,20 @@ function handleKeydown(event: KeyboardEvent, path: string) {
   overflow: hidden;
 }
 
+/* macOS 原生控制按钮预留区域 */
+.window-titlebar {
+  height: 52px;
+  -webkit-app-region: drag;
+  -webkit-user-select: none;
+}
+
 .sidebar-header {
   padding: var(--spacing-lg);
+  padding-top: var(--spacing-sm);
   display: flex;
   align-items: center;
   gap: var(--spacing-md);
+  -webkit-app-region: no-drag; /* 确保按钮可点击 */
 }
 
 .app-logo {
@@ -392,6 +404,7 @@ function handleKeydown(event: KeyboardEvent, path: string) {
   flex: 1;
   overflow-y: auto;
   padding: 0 var(--spacing-md);
+  -webkit-app-region: no-drag; /* 确保导航项可点击 */
 }
 
 .nav-section {
