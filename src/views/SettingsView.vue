@@ -201,144 +201,97 @@ function openReleasePage() {
 <template>
   <AppLayout>
     <template #title>
-      <h2>全局设置</h2>
+      <h2>设置</h2>
     </template>
 
-    <div class="settings-page">
-      <!-- 插件市场设置 -->
-      <div class="config-card">
-        <div class="config-header">
-          <div class="config-icon marketplace-icon">
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
+    <div class="settings-container">
+      <!-- 插件市场 Section -->
+      <section class="settings-section">
+        <div class="section-header">
+          <div class="section-icon blue">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
               <polyline points="9 22 9 12 15 12 15 22" />
             </svg>
           </div>
-          <div class="config-title">
-            <h3>插件市场设置</h3>
-            <p>配置插件来源与更新策略</p>
-          </div>
+          <span class="section-title">插件市场</span>
         </div>
 
-        <div class="config-form">
-          <!-- 状态消息 -->
-          <div
-            v-if="registryMessage"
-            class="status-message"
-            :class="registryMessage.type"
-          >
-            {{ registryMessage.text }}
-          </div>
+        <div class="settings-card">
+          <!-- 消息提示 -->
+          <Transition name="fade">
+            <div v-if="registryMessage" class="toast" :class="registryMessage.type">
+              {{ registryMessage.text }}
+            </div>
+          </Transition>
 
-          <!-- Registry URL -->
-          <div class="form-field">
-            <label class="field-label">插件仓库地址 (Registry URL)</label>
-            <div class="field-input-wrapper with-icon">
-              <svg
-                class="input-icon"
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-              >
-                <circle
-                  cx="12"
-                  cy="12"
-                  r="10"
-                />
-                <line
-                  x1="2"
-                  y1="12"
-                  x2="22"
-                  y2="12"
-                />
-                <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-              </svg>
+          <div class="setting-item">
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="label-main">仓库地址</span>
+                <span class="label-sub">插件清单文件 manifest.json 地址</span>
+              </div>
+              <button class="btn-link" @click="resetRegistryUrl">重置</button>
+            </div>
+            <div class="input-group">
               <input
                 v-model="registryUrl"
                 type="url"
-                class="field-input"
+                class="input-field"
                 placeholder="https://github.com/cuk-team/cuk-plugins"
               >
+              <button
+                class="btn-save"
+                :disabled="registryUrlSaving"
+                @click="saveRegistryUrl"
+              >
+                {{ registryUrlSaving ? '...' : '保存' }}
+              </button>
             </div>
-            <p class="field-hint">
-              官方或第三方托管的插件清单文件地址 (manifest.json)。
-            </p>
           </div>
         </div>
+      </section>
 
-        <!-- 操作按钮 -->
-        <div class="config-actions">
-          <button
-            class="btn btn-secondary"
-            :disabled="registryUrlSaving"
-            @click="resetRegistryUrl"
-          >
-            恢复默认
-          </button>
-          <button
-            class="btn btn-primary"
-            :disabled="registryUrlSaving"
-            @click="saveRegistryUrl"
-          >
-            {{ registryUrlSaving ? '保存中...' : '保存设置' }}
-          </button>
-        </div>
-      </div>
-
-      <!-- 通用设置 -->
-      <div class="config-card">
-        <div class="config-header">
-          <div class="config-icon general-icon">
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <circle
-                cx="12"
-                cy="12"
-                r="3"
-              />
+      <!-- 通用设置 Section -->
+      <section class="settings-section">
+        <div class="section-header">
+          <div class="section-icon gray">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3" />
               <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z" />
             </svg>
           </div>
-          <div class="config-title">
-            <h3>通用设置</h3>
-            <p>应用行为与后台任务管理</p>
+          <span class="section-title">通用</span>
+          <div class="section-actions">
+            <button class="btn-link" @click="resetGeneralSettings">重置</button>
+            <button
+              class="btn-primary-sm"
+              :disabled="generalSaving"
+              @click="saveGeneralSettings"
+            >
+              {{ generalSaving ? '保存中...' : '保存' }}
+            </button>
           </div>
         </div>
 
-        <div class="config-form">
-          <!-- 状态消息 -->
-          <div
-            v-if="generalMessage"
-            class="status-message"
-            :class="generalMessage.type"
-          >
-            {{ generalMessage.text }}
-          </div>
+        <div class="settings-card">
+          <!-- 消息提示 -->
+          <Transition name="fade">
+            <div v-if="generalMessage" class="toast" :class="generalMessage.type">
+              {{ generalMessage.text }}
+            </div>
+          </Transition>
 
-          <!-- 全局刷新间隔 -->
-          <div class="form-field">
-            <label class="field-label">全局刷新间隔 (默认)</label>
-            <div class="slider-field">
+          <div class="setting-item with-border">
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="label-main">刷新间隔</span>
+                <span class="label-sub">默认数据刷新频率，单独设置可覆盖</span>
+              </div>
+              <div class="value-display">{{ globalRefreshInterval }} 分钟</div>
+            </div>
+            <div class="slider-wrapper">
+              <span class="slider-min">1</span>
               <input
                 v-model.number="globalRefreshInterval"
                 type="range"
@@ -347,385 +300,447 @@ function openReleasePage() {
                 step="1"
                 class="slider"
               >
-              <span class="slider-value">{{ globalRefreshInterval }} 分钟</span>
+              <span class="slider-max">60</span>
             </div>
-            <p class="field-hint">
-              此设置将作为所有插件的默认刷新频率，插件单独设置可覆盖此值。
-            </p>
           </div>
 
-          <!-- 后台监控 -->
-          <div class="form-field toggle-field">
-            <div class="toggle-info">
-              <span class="toggle-label">后台监控</span>
-              <span class="toggle-desc">关闭窗口后继续在后台运行并获取数据</span>
+          <div class="setting-item">
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="label-main">后台运行</span>
+                <span class="label-sub">窗口关闭后继续在后台获取数据</span>
+              </div>
+              <label class="switch">
+                <input v-model="backgroundMonitoring" type="checkbox">
+                <span class="switch-slider"></span>
+              </label>
             </div>
-            <label class="toggle">
-              <input
-                v-model="backgroundMonitoring"
-                type="checkbox"
-              >
-              <span class="toggle-slider" />
-            </label>
           </div>
         </div>
+      </section>
 
-        <!-- 操作按钮 -->
-        <div class="config-actions">
-          <button
-            class="btn btn-secondary"
-            :disabled="generalSaving"
-            @click="resetGeneralSettings"
-          >
-            恢复默认
-          </button>
-          <button
-            class="btn btn-primary"
-            :disabled="generalSaving"
-            @click="saveGeneralSettings"
-          >
-            {{ generalSaving ? '保存中...' : '保存设置' }}
-          </button>
-        </div>
-      </div>
-
-      <!-- 检查更新 -->
-      <div class="config-card">
-        <div class="config-header">
-          <div class="config-icon update-icon">
-            <svg
-              width="24"
-              height="24"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              stroke-width="2"
-              stroke-linecap="round"
-              stroke-linejoin="round"
-            >
-              <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
-              <path d="M3 3v5h5" />
-              <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
-              <path d="M16 16h5v5" />
+      <!-- 关于 Section -->
+      <section class="settings-section">
+        <div class="section-header">
+          <div class="section-icon gradient">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <line x1="12" y1="16" x2="12" y2="12" />
+              <line x1="12" y1="8" x2="12.01" y2="8" />
             </svg>
           </div>
-          <div class="config-title">
-            <h3>检查更新</h3>
-            <p>当前版本: v{{ currentVersion }}</p>
-          </div>
+          <span class="section-title">关于</span>
         </div>
 
-        <div class="config-form">
-          <!-- 状态消息 -->
-          <div
-            v-if="updateMessage"
-            class="status-message"
-            :class="updateMessage.type"
-          >
-            {{ updateMessage.text }}
-          </div>
-
-          <!-- 更新信息 -->
-          <div
-            v-if="hasUpdate && latestVersion"
-            class="update-info"
-          >
-            <div class="update-badge">
-              <span class="badge-new">新版本</span>
-              <span class="badge-version">v{{ latestVersion }}</span>
+        <div class="settings-card">
+          <!-- 消息提示 -->
+          <Transition name="fade">
+            <div v-if="updateMessage" class="toast" :class="updateMessage.type">
+              {{ updateMessage.text }}
             </div>
-            <p class="update-hint">
-              点击下方按钮前往 GitHub 下载最新版本
-            </p>
+          </Transition>
+
+          <div class="setting-item with-border">
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="label-main">当前版本</span>
+              </div>
+              <div class="version-badge">v{{ currentVersion }}</div>
+            </div>
+          </div>
+
+          <div class="setting-item">
+            <div class="setting-row">
+              <div class="setting-label">
+                <span class="label-main">检查更新</span>
+                <span v-if="hasUpdate && latestVersion" class="label-sub update-available">
+                  新版本 v{{ latestVersion }} 可用
+                </span>
+                <span v-else class="label-sub">从 GitHub 获取最新版本</span>
+              </div>
+              <div class="action-buttons">
+                <button
+                  v-if="hasUpdate"
+                  class="btn-primary-sm"
+                  @click="openReleasePage"
+                >
+                  下载
+                </button>
+                <button
+                  class="btn-check"
+                  :class="{ loading: updateChecking }"
+                  :disabled="updateChecking"
+                  @click="checkForUpdates"
+                >
+                  <svg v-if="!updateChecking" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+                    <path d="M3 3v5h5" />
+                    <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+                    <path d="M16 16h5v5" />
+                  </svg>
+                  <span v-else class="spinner"></span>
+                </button>
+              </div>
+            </div>
           </div>
         </div>
-
-        <!-- 操作按钮 -->
-        <div class="config-actions">
-          <button
-            v-if="hasUpdate"
-            class="btn btn-primary"
-            @click="openReleasePage"
-          >
-            前往下载
-          </button>
-          <button
-            class="btn"
-            :class="hasUpdate ? 'btn-secondary' : 'btn-primary'"
-            :disabled="updateChecking"
-            @click="checkForUpdates"
-          >
-            {{ updateChecking ? '检查中...' : '检查更新' }}
-          </button>
-        </div>
-      </div>
+      </section>
     </div>
   </AppLayout>
 </template>
 
 <style scoped>
-.settings-page {
-  max-width: 700px;
+.settings-container {
+  max-width: 800px;
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xl);
+  gap: 28px;
 }
 
-.config-card {
+/* Section */
+.settings-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.section-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 4px;
+}
+
+.section-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  flex-shrink: 0;
+}
+
+.section-icon.blue {
+  background: linear-gradient(135deg, #007AFF, #5856D6);
+}
+
+.section-icon.gray {
+  background: linear-gradient(135deg, #8E8E93, #636366);
+}
+
+.section-icon.gradient {
+  background: linear-gradient(135deg, #FF9500, #FF2D55);
+}
+
+.section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex: 1;
+}
+
+.section-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Card */
+.settings-card {
   background: var(--color-bg-card);
-  border-radius: var(--radius-xl);
-  padding: var(--spacing-xl);
+  border-radius: 12px;
+  overflow: hidden;
+  position: relative;
 }
 
-.config-header {
-  display: flex;
-  align-items: center;
-  gap: var(--spacing-md);
-  padding-bottom: var(--spacing-xl);
+/* Toast */
+.toast {
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 500;
   border-bottom: 1px solid var(--color-border);
-  margin-bottom: var(--spacing-xl);
 }
 
-.config-icon {
-  width: 48px;
-  height: 48px;
-  border-radius: var(--radius-lg);
+.toast.success {
+  background: rgba(52, 199, 89, 0.12);
+  color: #34C759;
+}
+
+.toast.error {
+  background: rgba(255, 59, 48, 0.12);
+  color: #FF3B30;
+}
+
+.toast.info {
+  background: rgba(0, 122, 255, 0.12);
+  color: #007AFF;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+/* Setting Item */
+.setting-item {
+  padding: 14px 16px;
+}
+
+.setting-item.with-border {
+  border-bottom: 1px solid var(--color-border);
+}
+
+.setting-row {
   display: flex;
   align-items: center;
-  justify-content: center;
-  color: white;
+  justify-content: space-between;
+  gap: 16px;
 }
 
-.marketplace-icon {
-  background: var(--color-accent-blue, #3b82f6);
-}
-
-.general-icon {
-  background: var(--color-bg-tertiary, #374151);
-}
-
-.update-icon {
-  background: linear-gradient(135deg, #10b981, #3b82f6);
-}
-
-.config-title h3 {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--color-text);
-  margin: 0 0 var(--spacing-xs);
-}
-
-.config-title p {
-  font-size: 0.875rem;
-  color: var(--color-text-secondary);
-  margin: 0;
-}
-
-.config-form {
+.setting-label {
   display: flex;
   flex-direction: column;
-  gap: var(--spacing-xl);
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
 }
 
-.status-message {
-  padding: var(--spacing-md);
-  border-radius: var(--radius-md);
-  font-size: 0.875rem;
-}
-
-.status-message.success {
-  background: rgba(34, 197, 94, 0.1);
-  border: 1px solid rgba(34, 197, 94, 0.3);
-  color: var(--color-accent-green, #22c55e);
-}
-
-.status-message.error {
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  color: var(--color-accent-red, #ef4444);
-}
-
-.status-message.info {
-  background: rgba(59, 130, 246, 0.1);
-  border: 1px solid rgba(59, 130, 246, 0.3);
-  color: var(--color-accent-blue, #3b82f6);
-}
-
-.update-info {
-  padding: var(--spacing-lg);
-  background: var(--color-bg-secondary);
-  border-radius: var(--radius-lg);
-  text-align: center;
-}
-
-.update-badge {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: var(--spacing-sm);
-  margin-bottom: var(--spacing-md);
-}
-
-.badge-new {
-  background: linear-gradient(135deg, #10b981, #3b82f6);
-  color: white;
-  font-size: 0.75rem;
-  font-weight: 600;
-  padding: var(--spacing-xs) var(--spacing-sm);
-  border-radius: var(--radius-full, 9999px);
-}
-
-.badge-version {
-  font-size: 1.25rem;
-  font-weight: 600;
-  color: var(--color-text);
-}
-
-.update-hint {
-  font-size: 0.875rem;
-  color: var(--color-text-secondary);
-  margin: 0;
-}
-
-.form-field {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-sm);
-}
-
-.field-label {
-  font-size: 0.875rem;
+.label-main {
+  font-size: 14px;
   font-weight: 500;
   color: var(--color-text);
 }
 
-.field-input-wrapper {
-  display: flex;
-  align-items: center;
-  background: var(--color-bg-secondary);
-  border-radius: var(--radius-md);
-  padding: var(--spacing-sm) var(--spacing-md);
-}
-
-.field-input-wrapper.with-icon {
-  gap: var(--spacing-sm);
-}
-
-.input-icon {
+.label-sub {
+  font-size: 12px;
   color: var(--color-text-tertiary);
-  flex-shrink: 0;
 }
 
-.field-input {
+.label-sub.update-available {
+  color: #34C759;
+  font-weight: 500;
+}
+
+/* Input */
+.input-group {
+  display: flex;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.input-field {
   flex: 1;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  padding: 10px 12px;
+  font-size: 13px;
+  color: var(--color-text);
+  transition: border-color 0.15s ease;
+}
+
+.input-field:focus {
+  outline: none;
+  border-color: #007AFF;
+}
+
+.input-field::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+/* Buttons */
+.btn-link {
   background: none;
   border: none;
-  font-size: 0.9375rem;
+  color: #007AFF;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 6px;
+  transition: background 0.15s ease;
+}
+
+.btn-link:hover {
+  background: rgba(0, 122, 255, 0.1);
+}
+
+.btn-save {
+  background: var(--color-bg-tertiary);
+  border: none;
+  border-radius: 8px;
+  padding: 10px 16px;
+  font-size: 13px;
+  font-weight: 500;
   color: var(--color-text);
-  padding: var(--spacing-sm) 0;
+  cursor: pointer;
+  transition: background 0.15s ease;
+  min-width: 56px;
 }
 
-.field-input:focus {
-  outline: none;
+.btn-save:hover:not(:disabled) {
+  background: var(--color-bg-hover);
 }
 
-.field-input::placeholder {
-  color: var(--color-text-tertiary);
+.btn-save:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
-.field-hint {
-  font-size: 0.8125rem;
-  color: var(--color-text-tertiary);
-  margin: 0;
+.btn-primary-sm {
+  background: #007AFF;
+  border: none;
+  border-radius: 6px;
+  padding: 6px 12px;
+  font-size: 13px;
+  font-weight: 500;
+  color: white;
+  cursor: pointer;
+  transition: background 0.15s ease;
 }
 
-.slider-field {
+.btn-primary-sm:hover:not(:disabled) {
+  background: #0066CC;
+}
+
+.btn-primary-sm:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-check {
+  width: 32px;
+  height: 32px;
+  background: var(--color-bg-tertiary);
+  border: none;
+  border-radius: 8px;
   display: flex;
   align-items: center;
-  gap: var(--spacing-lg);
+  justify-content: center;
+  cursor: pointer;
+  color: var(--color-text-secondary);
+  transition: all 0.15s ease;
+}
+
+.btn-check:hover:not(:disabled) {
+  background: var(--color-bg-hover);
+  color: var(--color-text);
+}
+
+.btn-check:disabled {
+  cursor: not-allowed;
+}
+
+.btn-check.loading {
+  background: rgba(0, 122, 255, 0.1);
+}
+
+.action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* Value Display */
+.value-display {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-secondary);
+  padding: 4px 10px;
+  border-radius: 6px;
+  min-width: 72px;
+  text-align: center;
+}
+
+.version-badge {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-secondary);
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-family: 'SF Mono', Monaco, monospace;
+}
+
+/* Slider */
+.slider-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.slider-min,
+.slider-max {
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  min-width: 20px;
+  text-align: center;
 }
 
 .slider {
   flex: 1;
-  height: 6px;
+  height: 4px;
   -webkit-appearance: none;
   appearance: none;
   background: var(--color-bg-tertiary);
-  border-radius: 3px;
+  border-radius: 2px;
   cursor: pointer;
 }
 
 .slider::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 16px;
-  height: 16px;
-  background: var(--color-accent);
+  width: 18px;
+  height: 18px;
+  background: white;
   border-radius: 50%;
   cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 0.1s ease;
+}
+
+.slider::-webkit-slider-thumb:hover {
+  transform: scale(1.1);
 }
 
 .slider::-moz-range-thumb {
-  width: 16px;
-  height: 16px;
-  background: var(--color-accent);
+  width: 18px;
+  height: 18px;
+  background: white;
   border-radius: 50%;
   border: none;
   cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
 }
 
-.slider-value {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--color-text);
-  background: var(--color-bg-tertiary);
-  padding: var(--spacing-sm) var(--spacing-md);
-  border-radius: var(--radius-md);
-  min-width: 80px;
-  text-align: center;
-}
-
-.toggle-field {
-  flex-direction: row;
-  justify-content: space-between;
-  align-items: center;
-  padding: var(--spacing-md);
-  background: var(--color-bg-secondary);
-  border-radius: var(--radius-lg);
-}
-
-.toggle-info {
-  display: flex;
-  flex-direction: column;
-  gap: var(--spacing-xs);
-}
-
-.toggle-label {
-  font-size: 0.9375rem;
-  font-weight: 500;
-  color: var(--color-text);
-}
-
-.toggle-desc {
-  font-size: 0.8125rem;
-  color: var(--color-text-secondary);
-}
-
-/* Toggle Switch */
-.toggle {
+/* Switch */
+.switch {
   position: relative;
   display: inline-block;
-  width: 48px;
-  height: 28px;
+  width: 44px;
+  height: 26px;
+  flex-shrink: 0;
 }
 
-.toggle input {
+.switch input {
   opacity: 0;
   width: 0;
   height: 0;
 }
 
-.toggle-slider {
+.switch-slider {
   position: absolute;
   cursor: pointer;
   top: 0;
@@ -733,70 +748,44 @@ function openReleasePage() {
   right: 0;
   bottom: 0;
   background-color: var(--color-bg-tertiary);
-  transition: var(--transition-fast);
-  border-radius: 28px;
+  transition: background-color 0.2s ease;
+  border-radius: 26px;
 }
 
-.toggle-slider:before {
+.switch-slider:before {
   position: absolute;
   content: "";
   height: 22px;
   width: 22px;
-  left: 3px;
-  bottom: 3px;
+  left: 2px;
+  bottom: 2px;
   background-color: white;
-  transition: var(--transition-fast);
+  transition: transform 0.2s ease;
   border-radius: 50%;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
 }
 
-.toggle input:checked + .toggle-slider {
-  background-color: var(--color-accent);
+.switch input:checked + .switch-slider {
+  background-color: #34C759;
 }
 
-.toggle input:checked + .toggle-slider:before {
-  transform: translateX(20px);
+.switch input:checked + .switch-slider:before {
+  transform: translateX(18px);
 }
 
-.config-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: var(--spacing-md);
-  margin-top: var(--spacing-xl);
-  padding-top: var(--spacing-xl);
-  border-top: 1px solid var(--color-border);
+/* Spinner */
+.spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid transparent;
+  border-top-color: #007AFF;
+  border-radius: 50%;
+  animation: spin 0.8s linear infinite;
 }
 
-.btn {
-  padding: var(--spacing-sm) var(--spacing-lg);
-  border-radius: var(--radius-md);
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-}
-
-.btn-secondary {
-  background: none;
-  border: none;
-  color: var(--color-text-secondary);
-}
-
-.btn-secondary:hover {
-  color: var(--color-text);
-}
-
-.btn-primary {
-  background: var(--color-text);
-  border: none;
-  color: var(--color-bg);
-}
-
-.btn-primary:hover {
-  opacity: 0.9;
-}
-
-.btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 </style>
