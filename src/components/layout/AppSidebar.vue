@@ -9,12 +9,13 @@ import { useRouter, useRoute } from 'vue-router';
 const router = useRouter();
 const route = useRoute();
 
-// 折叠状态
-const isCollapsed = ref(false);
+// 折叠状态（从 localStorage 恢复）
+const isCollapsed = ref(localStorage.getItem('sidebar-collapsed') === 'true');
 
 // 切换折叠
 function toggleCollapse() {
   isCollapsed.value = !isCollapsed.value;
+  localStorage.setItem('sidebar-collapsed', String(isCollapsed.value));
 }
 
 // 菜单项
@@ -57,45 +58,68 @@ function handleKeydown(event: KeyboardEvent, path: string) {
     <div class="sidebar-header">
       <div class="app-logo">
         <svg
-          width="32"
-          height="32"
-          viewBox="0 0 32 32"
-          fill="none"
+          width="40"
+          height="40"
+          viewBox="0 0 1024 1024"
           xmlns="http://www.w3.org/2000/svg"
+          class="logo-svg"
         >
-          <rect
-            x="4"
-            y="4"
-            width="24"
-            height="24"
-            rx="6"
-            stroke="currentColor"
-            stroke-width="2"
-          />
-          <circle
-            cx="11"
-            cy="11"
-            r="2"
-            fill="currentColor"
-          />
-          <circle
-            cx="16"
-            cy="11"
-            r="2"
-            fill="currentColor"
-          />
-          <circle
-            cx="21"
-            cy="11"
-            r="2"
-            fill="currentColor"
-          />
-          <path
-            d="M8 18h16M8 22h12"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-          />
+          <defs>
+            <linearGradient id="sb-bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#1a1a2e" />
+              <stop offset="100%" stop-color="#0f0f12" />
+            </linearGradient>
+            <radialGradient id="sb-aurora" cx="50%" cy="0%" r="80%">
+              <stop offset="0%" stop-color="#10b981" stop-opacity="0.25" />
+              <stop offset="50%" stop-color="#3b82f6" stop-opacity="0.1" />
+              <stop offset="100%" stop-color="transparent" />
+            </radialGradient>
+            <linearGradient id="sb-mainGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="#10b981" />
+              <stop offset="50%" stop-color="#3b82f6" />
+              <stop offset="100%" stop-color="#8b5cf6" />
+            </linearGradient>
+            <linearGradient id="sb-meterGradient" x1="0%" y1="100%" x2="100%" y2="0%">
+              <stop offset="0%" stop-color="#10b981" />
+              <stop offset="60%" stop-color="#f59e0b" />
+              <stop offset="100%" stop-color="#ef4444" />
+            </linearGradient>
+            <linearGradient id="sb-reflection" x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stop-color="rgba(255,255,255,0.2)" />
+              <stop offset="40%" stop-color="rgba(255,255,255,0)" />
+              <stop offset="100%" stop-color="rgba(255,255,255,0.08)" />
+            </linearGradient>
+          </defs>
+          <rect x="100" y="100" width="824" height="824" rx="280" fill="url(#sb-mainGradient)" opacity="0.35" />
+          <g transform="translate(58, 58) scale(0.9)">
+            <path d="M512,1024c-136,0-184.8-1.4-245.6-13.6C186.2,994,124.6,964.4,80.6,920.4s-73.6-105.6-90-185.8C-21.4,673.8-22.8,625-22.8,512s1.4-161.8,13.6-222.6C7.4,209.2,38,147.6,82,103.6s105.6-73.6,185.8-90C328.2,1.4,377,0,512,0s183.8,1.4,244.6,13.6C836.8,29.8,898.4,59.4,942.4,103.4s73.6,105.6,90,185.8C1045.4,350.2,1046.8,399,1046.8,512s-1.4,161.8-13.6,222.6c-16.4,80.2-47,141.8-91,185.8s-105.6,73.6-185.8,90C695.8,1022.6,647,1024,512,1024z" fill="url(#sb-bgGradient)" />
+            <path d="M512,1024c-136,0-184.8-1.4-245.6-13.6C186.2,994,124.6,964.4,80.6,920.4s-73.6-105.6-90-185.8C-21.4,673.8-22.8,625-22.8,512s1.4-161.8,13.6-222.6C7.4,209.2,38,147.6,82,103.6s105.6-73.6,185.8-90C328.2,1.4,377,0,512,0s183.8,1.4,244.6,13.6C836.8,29.8,898.4,59.4,942.4,103.4s73.6,105.6,90,185.8C1045.4,350.2,1046.8,399,1046.8,512s-1.4,161.8-13.6,222.6c-16.4,80.2-47,141.8-91,185.8s-105.6,73.6-185.8,90C695.8,1022.6,647,1024,512,1024z" fill="url(#sb-aurora)" style="mix-blend-mode: screen;" />
+          </g>
+          <g transform="translate(512, 512) scale(1.25)">
+            <circle cx="0" cy="0" r="260" fill="none" stroke="#ffffff" stroke-width="6" stroke-opacity="0.08" />
+            <circle cx="0" cy="0" r="260" fill="none" stroke="#ffffff" stroke-width="30" stroke-opacity="0.06" stroke-dasharray="40 25" stroke-linecap="round" transform="rotate(-135)" />
+            <circle cx="0" cy="0" r="260" fill="none" stroke="url(#sb-meterGradient)" stroke-width="30" stroke-dasharray="680 1000" stroke-linecap="round" transform="rotate(-135)" opacity="0.9" />
+            <circle cx="0" cy="0" r="190" fill="none" stroke="url(#sb-mainGradient)" stroke-width="3" stroke-opacity="0.3" stroke-dasharray="15 10" />
+            <g transform="scale(1.15)">
+              <rect x="-14" y="-95" width="28" height="160" rx="14" fill="url(#sb-mainGradient)" opacity="0.9" />
+              <rect x="-150" y="-105" width="300" height="24" rx="12" fill="url(#sb-mainGradient)" opacity="0.9" />
+              <line x1="-120" y1="-81" x2="-120" y2="-10" stroke="url(#sb-mainGradient)" stroke-width="10" stroke-linecap="round" opacity="0.8" />
+              <line x1="120" y1="-81" x2="120" y2="-30" stroke="url(#sb-mainGradient)" stroke-width="10" stroke-linecap="round" opacity="0.8" />
+              <ellipse cx="-120" cy="5" rx="70" ry="22" fill="url(#sb-mainGradient)" opacity="0.7" />
+              <ellipse cx="-120" cy="0" rx="58" ry="16" fill="#10b981" opacity="0.5" />
+              <ellipse cx="120" cy="-15" rx="70" ry="22" fill="url(#sb-mainGradient)" opacity="0.7" />
+              <ellipse cx="120" cy="-20" rx="58" ry="16" fill="#3b82f6" opacity="0.5" />
+              <path d="M-45,65 L45,65 L32,90 L-32,90 Z" fill="url(#sb-mainGradient)" opacity="0.8" />
+              <ellipse cx="0" cy="95" rx="50" ry="14" fill="url(#sb-mainGradient)" opacity="0.6" />
+            </g>
+            <circle cx="180" cy="-180" r="12" fill="#10b981" opacity="0.9" />
+            <circle cx="-180" cy="180" r="10" fill="#8b5cf6" opacity="0.9" />
+            <circle cx="200" cy="100" r="8" fill="#3b82f6" opacity="0.7" />
+            <circle cx="-150" cy="-150" r="6" fill="#f59e0b" opacity="0.6" />
+          </g>
+          <g transform="translate(58, 58) scale(0.9)">
+            <path d="M512,1024c-136,0-184.8-1.4-245.6-13.6C186.2,994,124.6,964.4,80.6,920.4s-73.6-105.6-90-185.8C-21.4,673.8-22.8,625-22.8,512s1.4-161.8,13.6-222.6C7.4,209.2,38,147.6,82,103.6s105.6-73.6,185.8-90C328.2,1.4,377,0,512,0s183.8,1.4,244.6,13.6C836.8,29.8,898.4,59.4,942.4,103.4s73.6,105.6,90,185.8C1045.4,350.2,1046.8,399,1046.8,512s-1.4,161.8-13.6,222.6c-16.4,80.2-47,141.8-91,185.8s-105.6,73.6-185.8,90C695.8,1022.6,647,1024,512,1024z" fill="url(#sb-reflection)" style="mix-blend-mode: overlay;" />
+          </g>
         </svg>
       </div>
       <div
@@ -105,38 +129,6 @@ function handleKeydown(event: KeyboardEvent, path: string) {
         <span class="app-name">AI 监控助手</span>
         <span class="app-version">专业版</span>
       </div>
-      <button
-        class="collapse-btn"
-        :title="isCollapsed ? '展开' : '折叠'"
-        :aria-label="isCollapsed ? '展开侧边栏' : '折叠侧边栏'"
-        :aria-expanded="!isCollapsed"
-        aria-controls="sidebar-nav"
-        @click="toggleCollapse"
-      >
-        <svg
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-        >
-          <path
-            v-if="isCollapsed"
-            d="M9 18l6-6-6-6"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-          <path
-            v-else
-            d="M15 18l-6-6 6-6"
-            stroke="currentColor"
-            stroke-width="2"
-            stroke-linecap="round"
-            stroke-linejoin="round"
-          />
-        </svg>
-      </button>
     </div>
 
     <!-- 主菜单 -->
@@ -342,6 +334,42 @@ function handleKeydown(event: KeyboardEvent, path: string) {
         </ul>
       </div>
     </nav>
+
+    <!-- 折叠按钮 - 底部 -->
+    <div class="sidebar-footer">
+      <button
+        class="collapse-btn"
+        :title="isCollapsed ? '展开' : '折叠'"
+        :aria-label="isCollapsed ? '展开侧边栏' : '折叠侧边栏'"
+        :aria-expanded="!isCollapsed"
+        aria-controls="sidebar-nav"
+        @click="toggleCollapse"
+      >
+        <svg
+          width="16"
+          height="16"
+          viewBox="0 0 24 24"
+          fill="none"
+        >
+          <path
+            v-if="isCollapsed"
+            d="M9 18l6-6-6-6"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+          <path
+            v-else
+            d="M15 18l-6-6 6-6"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          />
+        </svg>
+      </button>
+    </div>
   </aside>
 </template>
 
@@ -376,12 +404,17 @@ function handleKeydown(event: KeyboardEvent, path: string) {
 .app-logo {
   width: 40px;
   height: 40px;
-  background: var(--color-bg-tertiary);
   border-radius: var(--radius-md);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--color-text);
+  flex-shrink: 0;
+}
+
+.app-logo .logo-svg {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .app-info {
@@ -478,8 +511,17 @@ function handleKeydown(event: KeyboardEvent, path: string) {
   font-size: 0.875rem;
 }
 
-/* 折叠按钮 */
+/* 底部折叠按钮区域 */
+.sidebar-footer {
+  padding: var(--spacing-md);
+  -webkit-app-region: no-drag;
+}
+
 .collapse-btn {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: none;
   border: none;
   padding: var(--spacing-sm);
@@ -487,7 +529,6 @@ function handleKeydown(event: KeyboardEvent, path: string) {
   color: var(--color-text-tertiary);
   border-radius: var(--radius-sm);
   transition: all var(--transition-fast);
-  margin-left: auto;
 }
 
 .collapse-btn:hover {
@@ -508,12 +549,6 @@ function handleKeydown(event: KeyboardEvent, path: string) {
 .sidebar.collapsed .app-logo {
   width: 36px;
   height: 36px;
-}
-
-.sidebar.collapsed .collapse-btn {
-  position: absolute;
-  right: var(--spacing-sm);
-  top: var(--spacing-md);
 }
 
 .sidebar.collapsed .nav-item {

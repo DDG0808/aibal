@@ -12,8 +12,8 @@
   "app": {
     "withGlobalTauri": true,
     "trayIcon": {
-      "iconPath": "icons/icon.png",
-      "iconAsTemplate": true
+      "iconPath": "icons/tray-icon.png",
+      "iconAsTemplate": false
     },
     "windows": [
       {
