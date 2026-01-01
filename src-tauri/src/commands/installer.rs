@@ -72,6 +72,18 @@ impl From<InstallError> for AppError {
 }
 
 // ============================================================================
+// 下载内容类型
+// ============================================================================
+
+/// 下载的内容类型
+enum DownloadedContent {
+    /// ZIP 文件
+    Zip(Vec<u8>),
+    /// 单个文件（文件名, 内容）
+    SingleFile { name: String, bytes: Vec<u8> },
+}
+
+// ============================================================================
 // 插件安装器
 // ============================================================================
 
@@ -96,8 +108,9 @@ impl PluginInstaller {
     /// 安装插件
     ///
     /// # 参数
-    /// - `source`: 插件源，支持两种格式：
-    ///   - URL: `https://example.com/plugin.zip`
+    /// - `source`: 插件源，支持三种格式：
+    ///   - ZIP URL: `https://example.com/plugin.zip`
+    ///   - GitHub 目录: `https://raw.githubusercontent.com/.../plugins/xxx`
     ///   - Registry: `registry://plugin-id`
     /// - `skip_signature`: 是否跳过签名验证
     /// - `registry_url`: 市场 registry.json URL（用于 registry:// 协议）
@@ -115,19 +128,43 @@ impl PluginInstaller {
 
         // 2. 创建临时目录
         let temp_dir = TempDir::new().map_err(|e| InstallError::Io(e.into()))?;
-        let zip_path = temp_dir.path().join("plugin.zip");
         let extract_dir = temp_dir.path().join("extracted");
+        fs::create_dir_all(&extract_dir).await?;
 
-        // 3. 下载 ZIP 文件
-        self.download(&download_url, &zip_path).await?;
-        log::debug!("下载完成: {:?}", zip_path);
+        // 3. 下载并根据内容类型处理
+        let download_result = self.download_and_detect(&download_url).await;
 
-        // 4. 安全解压
-        let extractor = SecureExtractor::new();
-        extractor
-            .extract(&zip_path, &extract_dir)
-            .map_err(|e| InstallError::Extract(e.to_string()))?;
-        log::debug!("解压完成: {:?}", extract_dir);
+        match download_result {
+            Ok(DownloadedContent::Zip(bytes)) => {
+                // ZIP 模式：解压
+                let zip_path = temp_dir.path().join("plugin.zip");
+                let mut file = fs::File::create(&zip_path).await?;
+                file.write_all(&bytes).await?;
+                file.flush().await?;
+                log::debug!("ZIP 下载完成: {:?}", zip_path);
+
+                let extractor = SecureExtractor::new();
+                extractor
+                    .extract(&zip_path, &extract_dir)
+                    .map_err(|e| InstallError::Extract(e.to_string()))?;
+                log::debug!("解压完成: {:?}", extract_dir);
+            }
+            Ok(DownloadedContent::SingleFile { name, bytes }) => {
+                // 单文件模式：直接保存
+                let file_path = extract_dir.join(&name);
+                let mut file = fs::File::create(&file_path).await?;
+                file.write_all(&bytes).await?;
+                file.flush().await?;
+                log::debug!("单文件下载完成: {:?}", file_path);
+            }
+            Err(_) if self.is_github_raw_url(&download_url) => {
+                // 404 且是 GitHub raw URL，尝试作为目录处理
+                log::info!("下载失败，尝试作为 GitHub 目录处理");
+                self.download_github_directory(&download_url, &extract_dir).await?;
+                log::debug!("GitHub 目录下载完成: {:?}", extract_dir);
+            }
+            Err(e) => return Err(e),
+        }
 
         // 5. 解析 manifest.json
         let manifest_path = extract_dir.join("manifest.json");
@@ -333,6 +370,144 @@ impl PluginInstaller {
         let mut file = fs::File::create(target).await?;
         file.write_all(&bytes).await?;
         file.flush().await?;
+
+        Ok(())
+    }
+
+    /// 下载并检测内容类型
+    async fn download_and_detect(&self, url: &str) -> Result<DownloadedContent, InstallError> {
+        let response = self
+            .http_client
+            .get(url)
+            .send()
+            .await
+            .map_err(|e| InstallError::Download(format!("HTTP 请求失败: {}", e)))?;
+
+        if !response.status().is_success() {
+            return Err(InstallError::Download(format!(
+                "下载失败: HTTP {}",
+                response.status()
+            )));
+        }
+
+        // 获取 Content-Type
+        let content_type = response
+            .headers()
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("")
+            .to_lowercase();
+
+        let bytes = response
+            .bytes()
+            .await
+            .map_err(|e| InstallError::Download(format!("读取响应失败: {}", e)))?;
+        let bytes_vec = bytes.to_vec();
+
+        // 检测是否为 ZIP（通过魔数或 Content-Type）
+        let is_zip = content_type.contains("zip")
+            || content_type.contains("octet-stream")
+            || (bytes_vec.len() >= 4 && &bytes_vec[0..4] == b"PK\x03\x04");
+
+        if is_zip {
+            Ok(DownloadedContent::Zip(bytes_vec))
+        } else {
+            // 从 URL 提取文件名
+            let name = url
+                .rsplit('/')
+                .next()
+                .unwrap_or("plugin.js")
+                .to_string();
+            Ok(DownloadedContent::SingleFile { name, bytes: bytes_vec })
+        }
+    }
+
+    /// 检测是否为 GitHub raw URL
+    fn is_github_raw_url(&self, url: &str) -> bool {
+        url.contains("raw.githubusercontent.com")
+    }
+
+    /// 解析 GitHub raw URL
+    /// 格式: https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}
+    /// 返回: (owner, repo, branch, path)
+    fn parse_github_raw_url(&self, url: &str) -> Result<(String, String, String, String), InstallError> {
+        const PREFIX: &str = "https://raw.githubusercontent.com/";
+
+        let path_part = url.strip_prefix(PREFIX).ok_or_else(|| {
+            InstallError::Download(format!("无效的 GitHub raw URL: {}", url))
+        })?;
+
+        let parts: Vec<&str> = path_part.splitn(4, '/').collect();
+        if parts.len() < 4 {
+            return Err(InstallError::Download(format!(
+                "GitHub URL 格式不完整: {}",
+                url
+            )));
+        }
+
+        Ok((
+            parts[0].to_string(), // owner
+            parts[1].to_string(), // repo
+            parts[2].to_string(), // branch
+            parts[3].to_string(), // path
+        ))
+    }
+
+    /// 从 GitHub 目录下载所有文件
+    async fn download_github_directory(
+        &self,
+        raw_url: &str,
+        target_dir: &Path,
+    ) -> Result<(), InstallError> {
+        // 将 raw.githubusercontent.com URL 转换为 API URL
+        // raw: https://raw.githubusercontent.com/{owner}/{repo}/{branch}/{path}
+        // api: https://api.github.com/repos/{owner}/{repo}/contents/{path}?ref={branch}
+        let (owner, repo, branch, path) = self.parse_github_raw_url(raw_url)?;
+
+        let api_url = format!(
+            "https://api.github.com/repos/{}/{}/contents/{}?ref={}",
+            owner, repo, path, branch
+        );
+
+        log::debug!("GitHub API URL: {}", api_url);
+
+        // 获取目录内容
+        let response = self
+            .http_client
+            .get(&api_url)
+            .header("User-Agent", "AiBal-Plugin-Installer")
+            .header("Accept", "application/vnd.github.v3+json")
+            .send()
+            .await
+            .map_err(|e| InstallError::Download(format!("GitHub API 请求失败: {}", e)))?;
+
+        if !response.status().is_success() {
+            return Err(InstallError::Download(format!(
+                "GitHub API 失败: HTTP {}",
+                response.status()
+            )));
+        }
+
+        let files: Vec<serde_json::Value> = response
+            .json()
+            .await
+            .map_err(|e| InstallError::Download(format!("解析 GitHub API 响应失败: {}", e)))?;
+
+        // 下载每个文件
+        for file in files {
+            let file_type = file.get("type").and_then(|v| v.as_str()).unwrap_or("");
+            let file_name = file.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let download_url = file.get("download_url").and_then(|v| v.as_str());
+
+            if file_type == "file" {
+                if let Some(url) = download_url {
+                    log::debug!("下载文件: {} -> {}", file_name, url);
+                    let file_path = target_dir.join(file_name);
+                    self.download(url, &file_path).await?;
+                }
+            }
+            // 目前只处理一级文件，不递归子目录
+        }
 
         Ok(())
     }
