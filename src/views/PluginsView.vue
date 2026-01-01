@@ -4,12 +4,14 @@
  * Phase 8.2: 插件管理、启用/禁用/删除插件
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 import { AppLayout } from '@/components/layout';
 import PluginConfigDialog from '@/components/dialog/PluginConfigDialog.vue';
 import { usePluginStore } from '@/stores';
 import type { HealthStatus, ConfigFieldSchema } from '@/types';
 
 const pluginStore = usePluginStore();
+const router = useRouter();
 
 // 确认对话框状态
 const showConfirmDialog = ref(false);
@@ -131,7 +133,7 @@ async function executeConfirmAction() {
 
 // 跳转到应用市场
 function goToMarketplace() {
-  window.location.hash = '#/marketplace';
+  router.push('/marketplace');
 }
 
 // 打开配置弹框
