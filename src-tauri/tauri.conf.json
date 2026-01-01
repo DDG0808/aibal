@@ -1,6 +1,6 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
-  "productName": "CUK",
+  "productName": "AiBal",
   "version": "0.1.0",
   "identifier": "com.cuk.app",
   "build": {
@@ -18,7 +18,7 @@
     "windows": [
       {
         "label": "main",
-        "title": "CUK",
+        "title": "AiBal",
         "url": "/home",
         "width": 300,
         "height": 360,
@@ -51,8 +51,8 @@
       "icons/icon.ico"
     ],
     "category": "Utility",
-    "shortDescription": "Claude Usage Tracker - Monitor your Claude AI usage",
-    "longDescription": "A macOS menu bar application for tracking Claude AI usage, balance, and status with a plugin-based architecture.",
+    "shortDescription": "AiBal - AI 服务用量监控助手",
+    "longDescription": "macOS 菜单栏应用，用于追踪 AI 服务使用量、余额和状态，支持插件扩展。",
     "macOS": {
       "minimumSystemVersion": "10.15",
       "dmg": {

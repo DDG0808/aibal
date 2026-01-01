@@ -133,7 +133,7 @@ fn create_tray_menu<R: Runtime>(app: &AppHandle<R>) -> Result<Menu<R>, tauri::Er
             &PredefinedMenuItem::separator(app)?,
             &MenuItem::with_id(app, "settings", "设置...", true, None::<&str>)?,
             &PredefinedMenuItem::separator(app)?,
-            &MenuItem::with_id(app, "about", "关于 CUK", true, None::<&str>)?,
+            &MenuItem::with_id(app, "about", "关于 AiBal", true, None::<&str>)?,
             &MenuItem::with_id(app, "quit", "退出", true, None::<&str>)?,
         ],
     )?;

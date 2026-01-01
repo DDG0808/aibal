@@ -84,9 +84,9 @@ onMounted(async () => {
     </div>
 
     <div class="about-info">
-      <h1>CUK</h1>
+      <h1>AiBal</h1>
       <p class="description">
-        Claude Usage Tracker
+        豆豆出品
       </p>
       <p class="version">
         版本 {{ version }}
@@ -94,12 +94,12 @@ onMounted(async () => {
     </div>
 
     <div class="about-details">
-      <p>macOS 菜单栏应用，用于追踪 Claude AI 使用量</p>
+      <p>macOS 菜单栏应用，用于追踪 AI 服务使用量</p>
     </div>
 
     <div class="about-footer">
       <p class="copyright">
-        &copy; 2025 CUK Project
+        &copy; 2025 AiBal
       </p>
       <p class="license">
         MIT License

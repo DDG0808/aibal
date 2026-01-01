@@ -92,8 +92,9 @@ impl WindowType {
                 always_on_top: false,
                 center: true,
                 skip_taskbar: false,
-                title_bar_style: None,
-                hidden_title: false,
+                // Overlay 模式：内容延伸到标题栏，traffic lights 覆盖在内容上
+                title_bar_style: Some(tauri::TitleBarStyle::Overlay),
+                hidden_title: true,
             },
             WindowType::Wizard => WindowConfig {
                 label: "wizard",
@@ -112,7 +113,7 @@ impl WindowType {
             },
             WindowType::About => WindowConfig {
                 label: "about",
-                title: "关于 CUK",
+                title: "关于 AiBal",
                 url: "/about",
                 width: 400.0,
                 height: 300.0,

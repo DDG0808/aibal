@@ -126,7 +126,7 @@ function handleKeydown(event: KeyboardEvent, path: string) {
         v-show="!isCollapsed"
         class="app-info"
       >
-        <span class="app-name">AI 监控助手</span>
+        <span class="app-name">AiBal</span>
         <span class="app-version">专业版</span>
       </div>
     </div>
@@ -397,7 +397,7 @@ function handleKeydown(event: KeyboardEvent, path: string) {
   padding-top: var(--spacing-sm);
   display: flex;
   align-items: center;
-  gap: var(--spacing-md);
+  gap: var(--spacing-sm);
   -webkit-app-region: no-drag; /* 确保按钮可点击 */
 }
 
