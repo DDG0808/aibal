@@ -56,5 +56,6 @@ Claude-Usage-Tracker-main/
 *.pem
 *.key
 
-# 插件 zip 文件
-public/plugins/*.zip
+# 用户安装的插件目录
+public/plugins/
+public/registry.json
