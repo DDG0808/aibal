@@ -143,8 +143,14 @@ export interface PluginHealth {
   errorCount: number;
   /** 平均延迟 (ms) */
   avgLatencyMs: number;
+  /** P99 延迟 (ms) */
+  p99LatencyMs: number;
   /** 成功率 (0-1) */
   successRate: number;
+  /** 总调用次数 */
+  totalCalls: number;
+  /** 连续失败次数 */
+  consecutiveFailures: number;
 }
 
 // ============================================================================

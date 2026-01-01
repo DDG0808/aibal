@@ -290,6 +290,8 @@ const loadData = async (force = false) => {
       safeInvoke<Result<PluginHealth[]>>('get_all_health'),
     ]);
 
+    let needRefresh = true; // 是否需要刷新当前插件
+
     if (pluginListResult.success && pluginListResult.data) {
       plugins.value = pluginListResult.data;
       // 检查当前选中的插件是否仍然可用
@@ -300,8 +302,10 @@ const loadData = async (force = false) => {
       const firstEnabled = enabledList[0];
       if (!isCurrentValid && firstEnabled) {
         // 当前选中的插件不可用，切换到第一个可用插件
+        // selectPlugin 内部会调用 refreshPlugin，所以这里不需要再刷新
         console.log('[HomeView] 当前选中插件不可用，切换到:', firstEnabled.id);
-        pluginStore.selectPlugin(firstEnabled.id);
+        await pluginStore.selectPlugin(firstEnabled.id);
+        needRefresh = false; // selectPlugin 已经刷新了
       }
     }
 
@@ -309,18 +313,19 @@ const loadData = async (force = false) => {
       pluginHealth.value = allHealthResult.data;
     }
 
-    // 2. 只刷新当前选中的插件数据
+    // 2. 只刷新当前选中的插件数据（如果尚未刷新）
+    // 使用 pluginStore.refreshPlugin 实现 Promise 去重，多个调用者共享同一次刷新结果
     const targetPluginId = pluginStore.selectedPluginId;
-    if (targetPluginId) {
+    if (targetPluginId && needRefresh) {
       console.log('[HomeView] 刷新当前插件:', targetPluginId);
-      const result = await safeInvoke<Result<PluginData>>('refresh_plugin', { id: targetPluginId, force });
-      if (result.success && result.data) {
-        // 更新或添加到 pluginData
+      const data = await pluginStore.refreshPlugin(targetPluginId, force);
+      if (data) {
+        // 同步到本地状态
         const index = pluginData.value.findIndex(d => d.pluginId === targetPluginId);
         if (index >= 0) {
-          pluginData.value[index] = result.data;
+          pluginData.value[index] = data;
         } else {
-          pluginData.value.push(result.data);
+          pluginData.value.push(data);
         }
         // 刷新成功，清除该插件的错误
         if (pluginErrors.value.has(targetPluginId)) {
@@ -373,14 +378,23 @@ const handleManagePlugins = async () => {
   }
 };
 
-// 初始化数据（通过 pluginStore 恢复持久化状态）
+// 初始化数据（通过 pluginStore 恢复持久化状态，不主动刷新）
+// 刷新交给 tray:refresh 事件统一处理，避免重复执行插件
 const initData = async () => {
   // 使用 pluginStore.init() 恢复持久化的启用状态和配置
   await pluginStore.init();
   // 同步 store 数据到本地状态
   plugins.value = pluginStore.plugins;
-  // 获取所有数据
-  await loadData();
+  // 同步缓存的插件数据到本地状态（不执行插件）
+  const cachedData = Array.from(pluginStore.pluginData.values());
+  if (cachedData.length > 0) {
+    pluginData.value = cachedData;
+  }
+  // 同步健康状态
+  const healthData = Array.from(pluginStore.pluginHealth.values());
+  if (healthData.length > 0) {
+    pluginHealth.value = healthData;
+  }
 };
 
 // 监听事件
@@ -473,7 +487,7 @@ const setupEventListeners = async () => {
   );
   unlisteners.push(unlistenPluginError);
 
-  // 监听窗口焦点变化事件
+  // 监听窗口焦点变化事件（仅处理失焦隐藏，刷新由 tray:refresh 事件统一处理）
   if (isTauri) {
     try {
       const { getCurrentWindow } = await import('@tauri-apps/api/window');
@@ -482,11 +496,8 @@ const setupEventListeners = async () => {
         if (!focused) {
           // 窗口失去焦点时隐藏
           currentWindow.hide();
-        } else {
-          // 窗口获得焦点时刷新数据（确保与其他窗口同步）
-          console.log('[HomeView] 窗口获得焦点，刷新数据');
-          await loadData();
         }
+        // 获得焦点时不再刷新，避免与 tray:refresh 事件重复
       });
       unlisteners.push(unlistenBlur);
     } catch (e) {
@@ -614,9 +625,16 @@ onUnmounted(() => {
           v-if="currentPluginError"
           class="plugin-error-state"
         >
-          <div class="plugin-error-icon">⚠️</div>
-          <p class="plugin-error-message">{{ currentPluginError.message }}</p>
-          <button class="plugin-error-retry" @click="handleRefresh">
+          <div class="plugin-error-icon">
+            ⚠️
+          </div>
+          <p class="plugin-error-message">
+            {{ currentPluginError.message }}
+          </p>
+          <button
+            class="plugin-error-retry"
+            @click="handleRefresh"
+          >
             重试
           </button>
         </div>

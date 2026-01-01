@@ -162,7 +162,9 @@ const handleToggleTheme = () => {
         class="dropdown-menu"
         @click.stop
       >
-        <div class="dropdown-label">切换监控源</div>
+        <div class="dropdown-label">
+          切换监控源
+        </div>
         <div
           v-for="plugin in plugins"
           :key="plugin.id"
@@ -171,9 +173,28 @@ const handleToggleTheme = () => {
           @click="selectPlugin(plugin.id)"
         >
           <div class="dropdown-item-icon">
-            <svg viewBox="0 0 24 24" fill="none">
-              <rect x="3" y="4" width="18" height="14" rx="2" stroke="currentColor" stroke-width="2"/>
-              <line x1="7" y1="11" x2="17" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+            <svg
+              viewBox="0 0 24 24"
+              fill="none"
+            >
+              <rect
+                x="3"
+                y="4"
+                width="18"
+                height="14"
+                rx="2"
+                stroke="currentColor"
+                stroke-width="2"
+              />
+              <line
+                x1="7"
+                y1="11"
+                x2="17"
+                y2="11"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              />
             </svg>
           </div>
           <div class="dropdown-item-content">

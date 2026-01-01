@@ -237,6 +237,38 @@ const healthLabel = computed(() => {
   }
 });
 
+// ============================================================================
+// 连接监控相关计算属性
+// ============================================================================
+
+// 格式化成功率（显示百分比，如 100.0%）
+const formatSuccessRate = computed(() => {
+  const rate = healthData.value?.successRate ?? 0;
+  return `${(rate * 100).toFixed(1)}%`;
+});
+
+// 格式化平均延迟（显示毫秒，如 1168ms）
+const formatLatency = computed(() => {
+  const latency = healthData.value?.avgLatencyMs ?? 0;
+  return `${Math.round(latency)}ms`;
+});
+
+// 成功率颜色类（高成功率显示绿色，低成功率显示红色）
+const successRateColorClass = computed(() => {
+  const rate = healthData.value?.successRate ?? 0;
+  if (rate >= 0.95) return 'success';
+  if (rate >= 0.8) return 'warning';
+  return 'danger';
+});
+
+// 错误计数颜色类（无错误显示绿色，有错误显示红色）
+const errorCountColorClass = computed(() => {
+  const count = healthData.value?.errorCount ?? 0;
+  if (count === 0) return 'success';
+  if (count <= 5) return 'warning';
+  return 'danger';
+});
+
 // 格式化更新时间
 const updateTimeLabel = computed(() => {
   const data = pluginStore.pluginData.get(selectedPluginId.value);
@@ -311,7 +343,7 @@ function formatItemReset(item: {
   return '';
 }
 
-// 刷新数据
+// 刷新数据（refreshPlugin 会自动更新健康统计）
 async function refreshData() {
   if (!selectedPluginId.value) return;
   isLoading.value = true;
@@ -347,15 +379,8 @@ async function setupEventListeners(): Promise<void> {
   );
   unlisteners.push(unlistenPluginsReady);
 
-  // 监听托盘刷新事件
-  const unlistenTrayRefresh = await safeListen<void>(
-    'tray:refresh',
-    async () => {
-      console.log('[DashboardView] 收到托盘刷新事件');
-      await refreshData();
-    }
-  );
-  unlisteners.push(unlistenTrayRefresh);
+  // 托盘刷新事件由 HomeView 处理，Dashboard 不需要监听
+  // 避免托盘弹窗显示时重复刷新插件
 
   // 监听插件禁用事件（其他窗口禁用插件时同步状态）
   const unlistenPluginDisabled = await pluginStore.setupPluginDisabledListener(async (disabledPluginId) => {
@@ -405,7 +430,7 @@ onMounted(async () => {
   try {
     await Promise.race([
       (async () => {
-        // init 会恢复持久化的选择并加载所有插件数据
+        // init 会恢复持久化的选择并加载缓存数据（不执行插件）
         await pluginStore.init();
         // 如果 store 中没有选中插件，选择第一个有数据类型的插件
         if (!pluginStore.selectedPluginId) {
@@ -414,10 +439,9 @@ onMounted(async () => {
             await pluginStore.selectPlugin(firstPlugin.id);
           }
         }
-        // init() 已经调用了 fetchAllData()，无需再次刷新
-        // 但如果当前插件数据缺失，单独刷新一次
-        if (pluginStore.selectedPluginId && !pluginStore.pluginData.has(pluginStore.selectedPluginId)) {
-          console.log('[DashboardView] 当前插件数据缺失，单独刷新:', pluginStore.selectedPluginId);
+        // 只刷新当前选中的插件（而非所有插件）
+        if (pluginStore.selectedPluginId) {
+          console.log('[DashboardView] 刷新当前插件:', pluginStore.selectedPluginId);
           await pluginStore.refreshPlugin(pluginStore.selectedPluginId, true);
         }
       })(),
@@ -445,74 +469,270 @@ onUnmounted(() => {
 
     <div class="dashboard">
       <!-- 空状态（初始化完成且无插件时显示） -->
-      <div v-if="!isInitializing && !hasPlugins" class="empty-state">
+      <div
+        v-if="!isInitializing && !hasPlugins"
+        class="empty-state"
+      >
         <!-- 背景装饰 -->
         <div class="empty-bg-decoration">
-          <div class="decoration-circle decoration-circle-1"></div>
-          <div class="decoration-circle decoration-circle-2"></div>
-          <div class="decoration-circle decoration-circle-3"></div>
+          <div class="decoration-circle decoration-circle-1" />
+          <div class="decoration-circle decoration-circle-2" />
+          <div class="decoration-circle decoration-circle-3" />
         </div>
 
         <!-- 精美的 SVG 插画 -->
         <div class="empty-illustration">
-          <svg width="180" height="140" viewBox="0 0 180 140" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <svg
+            width="180"
+            height="140"
+            viewBox="0 0 180 140"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+          >
             <!-- 底部平台 -->
-            <ellipse cx="90" cy="130" rx="70" ry="8" fill="url(#platformGradient)" opacity="0.3"/>
+            <ellipse
+              cx="90"
+              cy="130"
+              rx="70"
+              ry="8"
+              fill="url(#platformGradient)"
+              opacity="0.3"
+            />
 
             <!-- 主仪表盘面板 -->
-            <rect x="35" y="30" width="110" height="85" rx="12" fill="url(#panelGradient)" stroke="url(#borderGradient)" stroke-width="1.5"/>
+            <rect
+              x="35"
+              y="30"
+              width="110"
+              height="85"
+              rx="12"
+              fill="url(#panelGradient)"
+              stroke="url(#borderGradient)"
+              stroke-width="1.5"
+            />
 
             <!-- 面板内部装饰线 -->
-            <line x1="50" y1="50" x2="130" y2="50" stroke="var(--color-border)" stroke-width="1" opacity="0.5"/>
+            <line
+              x1="50"
+              y1="50"
+              x2="130"
+              y2="50"
+              stroke="var(--color-border)"
+              stroke-width="1"
+              opacity="0.5"
+            />
 
             <!-- 柱状图 -->
-            <rect x="55" y="75" width="16" height="30" rx="3" fill="url(#barGradient1)" class="bar bar-1"/>
-            <rect x="82" y="60" width="16" height="45" rx="3" fill="url(#barGradient2)" class="bar bar-2"/>
-            <rect x="109" y="68" width="16" height="37" rx="3" fill="url(#barGradient3)" class="bar bar-3"/>
+            <rect
+              x="55"
+              y="75"
+              width="16"
+              height="30"
+              rx="3"
+              fill="url(#barGradient1)"
+              class="bar bar-1"
+            />
+            <rect
+              x="82"
+              y="60"
+              width="16"
+              height="45"
+              rx="3"
+              fill="url(#barGradient2)"
+              class="bar bar-2"
+            />
+            <rect
+              x="109"
+              y="68"
+              width="16"
+              height="37"
+              rx="3"
+              fill="url(#barGradient3)"
+              class="bar bar-3"
+            />
 
             <!-- 仪表盘圆环（右上角装饰） -->
-            <circle cx="145" cy="25" r="20" fill="var(--color-bg-tertiary)" stroke="url(#ringGradient)" stroke-width="3" opacity="0.8"/>
-            <path d="M145 13 A12 12 0 1 1 133 25" stroke="var(--color-accent)" stroke-width="3" stroke-linecap="round" class="gauge-arc"/>
+            <circle
+              cx="145"
+              cy="25"
+              r="20"
+              fill="var(--color-bg-tertiary)"
+              stroke="url(#ringGradient)"
+              stroke-width="3"
+              opacity="0.8"
+            />
+            <path
+              d="M145 13 A12 12 0 1 1 133 25"
+              stroke="var(--color-accent)"
+              stroke-width="3"
+              stroke-linecap="round"
+              class="gauge-arc"
+            />
 
             <!-- 浮动数据点 -->
-            <circle cx="30" cy="50" r="6" fill="var(--color-accent-green)" class="float-dot dot-1"/>
-            <circle cx="155" cy="70" r="4" fill="var(--color-accent)" class="float-dot dot-2"/>
-            <circle cx="25" cy="85" r="3" fill="var(--color-accent-red)" class="float-dot dot-3"/>
+            <circle
+              cx="30"
+              cy="50"
+              r="6"
+              fill="var(--color-accent-green)"
+              class="float-dot dot-1"
+            />
+            <circle
+              cx="155"
+              cy="70"
+              r="4"
+              fill="var(--color-accent)"
+              class="float-dot dot-2"
+            />
+            <circle
+              cx="25"
+              cy="85"
+              r="3"
+              fill="var(--color-accent-red)"
+              class="float-dot dot-3"
+            />
 
             <!-- 连接线 -->
-            <path d="M36 50 L55 75" stroke="var(--color-accent-green)" stroke-width="1" stroke-dasharray="3 3" opacity="0.5"/>
-            <path d="M151 70 L125 68" stroke="var(--color-accent)" stroke-width="1" stroke-dasharray="3 3" opacity="0.5"/>
+            <path
+              d="M36 50 L55 75"
+              stroke="var(--color-accent-green)"
+              stroke-width="1"
+              stroke-dasharray="3 3"
+              opacity="0.5"
+            />
+            <path
+              d="M151 70 L125 68"
+              stroke="var(--color-accent)"
+              stroke-width="1"
+              stroke-dasharray="3 3"
+              opacity="0.5"
+            />
 
             <!-- 渐变定义 -->
             <defs>
-              <linearGradient id="platformGradient" x1="20" y1="130" x2="160" y2="130">
-                <stop offset="0%" stop-color="var(--color-text-tertiary)" stop-opacity="0"/>
-                <stop offset="50%" stop-color="var(--color-text-tertiary)"/>
-                <stop offset="100%" stop-color="var(--color-text-tertiary)" stop-opacity="0"/>
+              <linearGradient
+                id="platformGradient"
+                x1="20"
+                y1="130"
+                x2="160"
+                y2="130"
+              >
+                <stop
+                  offset="0%"
+                  stop-color="var(--color-text-tertiary)"
+                  stop-opacity="0"
+                />
+                <stop
+                  offset="50%"
+                  stop-color="var(--color-text-tertiary)"
+                />
+                <stop
+                  offset="100%"
+                  stop-color="var(--color-text-tertiary)"
+                  stop-opacity="0"
+                />
               </linearGradient>
-              <linearGradient id="panelGradient" x1="35" y1="30" x2="145" y2="115">
-                <stop offset="0%" stop-color="var(--color-bg-tertiary)"/>
-                <stop offset="100%" stop-color="var(--color-bg-secondary)"/>
+              <linearGradient
+                id="panelGradient"
+                x1="35"
+                y1="30"
+                x2="145"
+                y2="115"
+              >
+                <stop
+                  offset="0%"
+                  stop-color="var(--color-bg-tertiary)"
+                />
+                <stop
+                  offset="100%"
+                  stop-color="var(--color-bg-secondary)"
+                />
               </linearGradient>
-              <linearGradient id="borderGradient" x1="35" y1="30" x2="145" y2="115">
-                <stop offset="0%" stop-color="var(--color-border)" stop-opacity="0.8"/>
-                <stop offset="100%" stop-color="var(--color-border)" stop-opacity="0.3"/>
+              <linearGradient
+                id="borderGradient"
+                x1="35"
+                y1="30"
+                x2="145"
+                y2="115"
+              >
+                <stop
+                  offset="0%"
+                  stop-color="var(--color-border)"
+                  stop-opacity="0.8"
+                />
+                <stop
+                  offset="100%"
+                  stop-color="var(--color-border)"
+                  stop-opacity="0.3"
+                />
               </linearGradient>
-              <linearGradient id="barGradient1" x1="63" y1="105" x2="63" y2="75">
-                <stop offset="0%" stop-color="var(--color-accent-green)"/>
-                <stop offset="100%" stop-color="var(--color-accent-green)" stop-opacity="0.6"/>
+              <linearGradient
+                id="barGradient1"
+                x1="63"
+                y1="105"
+                x2="63"
+                y2="75"
+              >
+                <stop
+                  offset="0%"
+                  stop-color="var(--color-accent-green)"
+                />
+                <stop
+                  offset="100%"
+                  stop-color="var(--color-accent-green)"
+                  stop-opacity="0.6"
+                />
               </linearGradient>
-              <linearGradient id="barGradient2" x1="90" y1="105" x2="90" y2="60">
-                <stop offset="0%" stop-color="var(--color-accent)"/>
-                <stop offset="100%" stop-color="var(--color-accent)" stop-opacity="0.6"/>
+              <linearGradient
+                id="barGradient2"
+                x1="90"
+                y1="105"
+                x2="90"
+                y2="60"
+              >
+                <stop
+                  offset="0%"
+                  stop-color="var(--color-accent)"
+                />
+                <stop
+                  offset="100%"
+                  stop-color="var(--color-accent)"
+                  stop-opacity="0.6"
+                />
               </linearGradient>
-              <linearGradient id="barGradient3" x1="117" y1="105" x2="117" y2="68">
-                <stop offset="0%" stop-color="#6366f1"/>
-                <stop offset="100%" stop-color="#6366f1" stop-opacity="0.6"/>
+              <linearGradient
+                id="barGradient3"
+                x1="117"
+                y1="105"
+                x2="117"
+                y2="68"
+              >
+                <stop
+                  offset="0%"
+                  stop-color="#6366f1"
+                />
+                <stop
+                  offset="100%"
+                  stop-color="#6366f1"
+                  stop-opacity="0.6"
+                />
               </linearGradient>
-              <linearGradient id="ringGradient" x1="125" y1="5" x2="165" y2="45">
-                <stop offset="0%" stop-color="var(--color-border)"/>
-                <stop offset="100%" stop-color="var(--color-border)" stop-opacity="0.3"/>
+              <linearGradient
+                id="ringGradient"
+                x1="125"
+                y1="5"
+                x2="165"
+                y2="45"
+              >
+                <stop
+                  offset="0%"
+                  stop-color="var(--color-border)"
+                />
+                <stop
+                  offset="100%"
+                  stop-color="var(--color-border)"
+                  stop-opacity="0.3"
+                />
               </linearGradient>
             </defs>
           </svg>
@@ -528,27 +748,86 @@ onUnmounted(() => {
         <div class="empty-features">
           <div class="feature-item">
             <div class="feature-icon">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <path d="M22 12h-4l-3 9L9 3l-3 9H2" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+              >
+                <path
+                  d="M22 12h-4l-3 9L9 3l-3 9H2"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
               </svg>
             </div>
             <span>实时监控</span>
           </div>
           <div class="feature-item">
             <div class="feature-icon">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <rect x="3" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
-                <rect x="14" y="3" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
-                <rect x="14" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
-                <rect x="3" y="14" width="7" height="7" rx="1" stroke="currentColor" stroke-width="2"/>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+              >
+                <rect
+                  x="3"
+                  y="3"
+                  width="7"
+                  height="7"
+                  rx="1"
+                  stroke="currentColor"
+                  stroke-width="2"
+                />
+                <rect
+                  x="14"
+                  y="3"
+                  width="7"
+                  height="7"
+                  rx="1"
+                  stroke="currentColor"
+                  stroke-width="2"
+                />
+                <rect
+                  x="14"
+                  y="14"
+                  width="7"
+                  height="7"
+                  rx="1"
+                  stroke="currentColor"
+                  stroke-width="2"
+                />
+                <rect
+                  x="3"
+                  y="14"
+                  width="7"
+                  height="7"
+                  rx="1"
+                  stroke="currentColor"
+                  stroke-width="2"
+                />
               </svg>
             </div>
             <span>多源聚合</span>
           </div>
           <div class="feature-item">
             <div class="feature-icon">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              <svg
+                width="16"
+                height="16"
+                viewBox="0 0 24 24"
+                fill="none"
+              >
+                <path
+                  d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                />
               </svg>
             </div>
             <span>安全可靠</span>
@@ -556,24 +835,69 @@ onUnmounted(() => {
         </div>
 
         <!-- 行动按钮 -->
-        <button class="go-marketplace-btn" @click="goToMarketplace">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-            <path d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            <line x1="3" y1="6" x2="21" y2="6" stroke="currentColor" stroke-width="2"/>
-            <path d="M16 10a4 4 0 01-8 0" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <button
+          class="go-marketplace-btn"
+          @click="goToMarketplace"
+        >
+          <svg
+            width="18"
+            height="18"
+            viewBox="0 0 24 24"
+            fill="none"
+          >
+            <path
+              d="M6 2L3 6v14a2 2 0 002 2h14a2 2 0 002-2V6l-3-4z"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
+            <line
+              x1="3"
+              y1="6"
+              x2="21"
+              y2="6"
+              stroke="currentColor"
+              stroke-width="2"
+            />
+            <path
+              d="M16 10a4 4 0 01-8 0"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
           </svg>
           <span>前往插件市场</span>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" class="arrow-icon">
-            <path d="M5 12h14M12 5l7 7-7 7" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 24 24"
+            fill="none"
+            class="arrow-icon"
+          >
+            <path
+              d="M5 12h14M12 5l7 7-7 7"
+              stroke="currentColor"
+              stroke-width="2"
+              stroke-linecap="round"
+              stroke-linejoin="round"
+            />
           </svg>
         </button>
       </div>
 
       <!-- 主插件卡片（初始化中或有插件时显示） -->
-      <div v-else class="plugin-card">
+      <div
+        v-else
+        class="plugin-card"
+      >
         <!-- 切换加载蒙层 -->
-        <div v-if="isSwitching" class="switching-overlay">
-          <div class="switching-spinner"></div>
+        <div
+          v-if="isSwitching"
+          class="switching-overlay"
+        >
+          <div class="switching-spinner" />
           <span class="switching-text">加载中...</span>
         </div>
 
@@ -586,7 +910,10 @@ onUnmounted(() => {
               <IconBolt />
             </div>
             <div class="plugin-meta">
-              <div class="plugin-name-row" @click="toggleDropdown">
+              <div
+                class="plugin-name-row"
+                @click="toggleDropdown"
+              >
                 <span class="plugin-name">{{ selectedPlugin?.name || '加载中...' }}</span>
                 <svg
                   v-if="plugins.length > 1"
@@ -607,8 +934,13 @@ onUnmounted(() => {
                 </svg>
               </div>
               <!-- 插件下拉框 -->
-              <div v-if="showPluginDropdown" class="plugin-dropdown">
-                <div class="dropdown-label">切换监控源</div>
+              <div
+                v-if="showPluginDropdown"
+                class="plugin-dropdown"
+              >
+                <div class="dropdown-label">
+                  切换监控源
+                </div>
                 <div
                   v-for="plugin in plugins"
                   :key="plugin.id"
@@ -617,14 +949,38 @@ onUnmounted(() => {
                   @click="selectPlugin(plugin.id)"
                 >
                   <div class="dropdown-item-icon">
-                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                      <rect x="3" y="4" width="18" height="14" rx="2" stroke="currentColor" stroke-width="2"/>
-                      <line x1="7" y1="11" x2="17" y2="11" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                    >
+                      <rect
+                        x="3"
+                        y="4"
+                        width="18"
+                        height="14"
+                        rx="2"
+                        stroke="currentColor"
+                        stroke-width="2"
+                      />
+                      <line
+                        x1="7"
+                        y1="11"
+                        x2="17"
+                        y2="11"
+                        stroke="currentColor"
+                        stroke-width="2"
+                        stroke-linecap="round"
+                      />
                     </svg>
                   </div>
                   <div class="dropdown-item-content">
                     <span class="dropdown-item-name">{{ plugin.name }}</span>
-                    <span class="dropdown-item-balance"><span class="balance-value" :style="{ color: getPluginBalanceInfo(plugin.id).color }">{{ getPluginBalanceInfo(plugin.id).value }}</span><span class="balance-dot">·</span><span class="balance-label">{{ getPluginBalanceInfo(plugin.id).label }}</span></span>
+                    <span class="dropdown-item-balance"><span
+                      class="balance-value"
+                      :style="{ color: getPluginBalanceInfo(plugin.id).color }"
+                    >{{ getPluginBalanceInfo(plugin.id).value }}</span><span class="balance-dot">·</span><span class="balance-label">{{ getPluginBalanceInfo(plugin.id).label }}</span></span>
                   </div>
                   <svg
                     v-if="plugin.id === selectedPluginId"
@@ -664,173 +1020,334 @@ onUnmounted(() => {
         </div>
 
         <!-- 数据展示区域（支持局部刷新） -->
-        <div class="data-section" :class="{ refreshing: isDataLoading }">
+        <div
+          class="data-section"
+          :class="{ refreshing: isDataLoading }"
+        >
           <!-- 局部刷新蒙层（有数据后自动隐藏） -->
-          <div v-if="isDataLoading" class="refresh-overlay">
-            <div class="refresh-spinner"></div>
+          <div
+            v-if="isDataLoading"
+            class="refresh-overlay"
+          >
+            <div class="refresh-spinner" />
           </div>
 
           <!-- 错误状态（插件执行失败时显示） -->
-          <div v-if="!isInitializing && pluginError" class="error-state">
-            <div class="error-icon">⚠️</div>
+          <div
+            v-if="!isInitializing && pluginError"
+            class="error-state"
+          >
+            <div class="error-icon">
+              ⚠️
+            </div>
             <h4>获取数据失败</h4>
-            <p class="error-message">{{ pluginError.message }}</p>
+            <p class="error-message">
+              {{ pluginError.message }}
+            </p>
             <div class="error-actions">
-              <button class="retry-btn" @click="refreshData">
+              <button
+                class="retry-btn"
+                @click="refreshData"
+              >
                 <IconRefresh />
                 重试
               </button>
-              <button class="config-btn-secondary" @click="goToPluginConfig">检查配置</button>
+              <button
+                class="config-btn-secondary"
+                @click="goToPluginConfig"
+              >
+                检查配置
+              </button>
             </div>
           </div>
 
           <!-- 无数据状态（仅在初始化完成后且无错误时显示） -->
-          <div v-else-if="!isInitializing && !hasData" class="no-data-state">
-            <div class="no-data-icon">⚙️</div>
+          <div
+            v-else-if="!isInitializing && !hasData"
+            class="no-data-state"
+          >
+            <div class="no-data-icon">
+              ⚙️
+            </div>
             <h4>需要配置插件</h4>
             <p>请先配置插件的 API 密钥等参数</p>
-            <button class="config-btn" @click="goToPluginConfig">前往配置</button>
+            <button
+              class="config-btn"
+              @click="goToPluginConfig"
+            >
+              前往配置
+            </button>
           </div>
 
           <!-- Usage 类型展示 -->
           <template v-else-if="currentDataType === 'usage' && usageData">
-          <div class="usage-main">
-            <div class="usage-stats">
-              <span class="usage-label">当前使用量</span>
-              <div class="usage-value">
-                <span class="percentage">{{ usageData.percentage }}</span>
-                <span class="percent-sign">%</span>
+            <div class="usage-main">
+              <div class="usage-stats">
+                <span class="usage-label">当前使用量</span>
+                <div class="usage-value">
+                  <span class="percentage">{{ usageData.percentage }}</span>
+                  <span class="percent-sign">%</span>
+                </div>
+              </div>
+              <div class="usage-meta">
+                <div class="reset-badge">
+                  {{ usageData.resetLabel || '--' }}
+                </div>
+                <div class="usage-detail">
+                  {{ formatUsedQuota(usageData.used ?? 0, usageData.limit ?? 0) }} {{ usageData.unit }}
+                </div>
               </div>
             </div>
-            <div class="usage-meta">
-              <div class="reset-badge">
-                {{ usageData.resetLabel || '--' }}
-              </div>
-              <div class="usage-detail">
-                {{ formatUsedQuota(usageData.used ?? 0, usageData.limit ?? 0) }} {{ usageData.unit }}
-              </div>
-            </div>
-          </div>
 
-          <div class="progress-bar">
+            <div class="progress-bar">
+              <div
+                class="progress-fill"
+                :style="{ width: usageData.percentage + '%', background: progressColor }"
+              />
+            </div>
+
             <div
-              class="progress-fill"
-              :style="{ width: usageData.percentage + '%', background: progressColor }"
-            />
-          </div>
-
-          <div v-if="usageData.dimensions?.length" class="dimensions-section">
-            <div class="section-header">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-                <polyline points="14,2 14,8 20,8" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-              </svg>
-              <span>多维度限额详情</span>
-            </div>
-            <div class="dimensions-grid">
-              <div v-for="dim in usageData.dimensions" :key="dim.id" class="dimension-card">
-                <div class="dimension-header">
-                  <span class="dimension-label">{{ dim.label }}</span>
-                  <span class="dimension-percentage">{{ dim.percentage }}%</span>
-                </div>
-                <div class="dimension-progress">
-                  <div class="dimension-progress-fill" :style="{ width: dim.percentage + '%', background: dim.percentage >= 75 ? 'var(--color-accent)' : 'var(--color-accent-green)' }" />
-                </div>
-                <div class="dimension-meta">
-                  <span>{{ formatLargeNumber(dim.used ?? 0) }}/{{ formatLargeNumber(dim.limit ?? 0) }}</span>
-                  <span>{{ formatResetTime(dim.resetTime) }}</span>
-                </div>
+              v-if="usageData.dimensions?.length"
+              class="dimensions-section"
+            >
+              <div class="section-header">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                >
+                  <path
+                    d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                  <polyline
+                    points="14,2 14,8 20,8"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                </svg>
+                <span>多维度限额详情</span>
               </div>
-            </div>
-          </div>
-        </template>
-
-        <!-- Balance 类型展示 -->
-        <template v-else-if="currentDataType === 'balance' && balanceData">
-          <!-- 主余额显示（仅当 showTotal=true 且有 balance 值时） -->
-          <div v-if="balanceData.showTotal && balanceData.balance > 0" class="balance-main">
-            <div class="balance-stats">
-              <span class="balance-label">当前余额</span>
-              <div class="balance-value">
-                <span class="balance-amount accent">{{ formatBalance(balanceData.balance, balanceData.currency) }}</span>
-              </div>
-            </div>
-            <div class="balance-meta">
-              <div v-if="balanceData.expiresAt" class="expires-badge">
-                {{ formatExpiresAt(balanceData.expiresAt) }}
-              </div>
-            </div>
-          </div>
-
-          <!-- 多配额子项网格 -->
-          <div v-if="balanceData.items?.length" class="items-grid">
-            <div v-for="(item, index) in balanceData.items" :key="`${item.name}-${index}`" class="item-card">
-              <div class="item-header">
-                <span class="item-name">{{ item.name }}</span>
-                <span v-if="item.refreshable" class="refreshable-badge">可刷新</span>
-                <!-- PAY_PER_USE (quota=0) 不显示百分比；显示剩余百分比 -->
-                <span v-if="item.quota > 0" class="item-percentage">{{ Math.round(100 - item.percentage) }}%</span>
-              </div>
-              <!-- PAY_PER_USE (quota=0) 不显示进度条 -->
-              <div v-if="item.quota > 0" class="item-progress">
+              <div class="dimensions-grid">
                 <div
-                  class="item-progress-fill"
-                  :style="{
-                    width: item.percentage + '%',
-                    background: getItemProgressColor(item.percentage)
-                  }"
-                />
-              </div>
-              <div class="item-meta">
-                <span class="item-used">{{ formatItemUsed(item) }}</span>
-                <span class="item-reset">{{ formatItemReset(item) }}</span>
+                  v-for="dim in usageData.dimensions"
+                  :key="dim.id"
+                  class="dimension-card"
+                >
+                  <div class="dimension-header">
+                    <span class="dimension-label">{{ dim.label }}</span>
+                    <span class="dimension-percentage">{{ dim.percentage }}%</span>
+                  </div>
+                  <div class="dimension-progress">
+                    <div
+                      class="dimension-progress-fill"
+                      :style="{ width: dim.percentage + '%', background: dim.percentage >= 75 ? 'var(--color-accent)' : 'var(--color-accent-green)' }"
+                    />
+                  </div>
+                  <div class="dimension-meta">
+                    <span>{{ formatLargeNumber(dim.used ?? 0) }}/{{ formatLargeNumber(dim.limit ?? 0) }}</span>
+                    <span>{{ formatResetTime(dim.resetTime) }}</span>
+                  </div>
+                </div>
               </div>
             </div>
-          </div>
+          </template>
 
-          <!-- 旧版额度使用（无 items 时的 fallback） -->
-          <div v-else-if="balanceData.quota && balanceData.usedQuota !== undefined" class="quota-section">
-            <div class="section-header">
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-                <circle cx="12" cy="12" r="10" stroke="currentColor" stroke-width="2" />
-                <path d="M12 6v6l4 2" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-              </svg>
-              <span>额度使用</span>
-            </div>
-            <div class="quota-info">
-              <div class="quota-used">
-                {{ formatUsedQuota(balanceData.usedQuota ?? 0, balanceData.quota ?? 0) }} {{ balanceData.currency }}
+          <!-- Balance 类型展示 -->
+          <template v-else-if="currentDataType === 'balance' && balanceData">
+            <!-- 主余额显示（仅当 showTotal=true 且有 balance 值时） -->
+            <div
+              v-if="balanceData.showTotal && balanceData.balance > 0"
+              class="balance-main"
+            >
+              <div class="balance-stats">
+                <span class="balance-label">当前余额</span>
+                <div class="balance-value">
+                  <span class="balance-amount accent">{{ formatBalance(balanceData.balance, balanceData.currency) }}</span>
+                </div>
               </div>
-              <div class="quota-progress">
-                <div class="quota-progress-fill" :style="{ width: (balanceData.usedQuota / balanceData.quota * 100) + '%', background: balanceColor }" />
+              <div class="balance-meta">
+                <div
+                  v-if="balanceData.expiresAt"
+                  class="expires-badge"
+                >
+                  {{ formatExpiresAt(balanceData.expiresAt) }}
+                </div>
               </div>
             </div>
-          </div>
-        </template>
 
-        <!-- Status 类型展示 -->
-        <template v-else-if="currentDataType === 'status' && statusData">
-          <div class="status-main">
-            <div class="status-indicator-large" :style="{ background: statusColor }">
-              <span class="status-icon">{{ statusData.indicator === 'none' ? '✓' : '!' }}</span>
+            <!-- 多配额子项网格 -->
+            <div
+              v-if="balanceData.items?.length"
+              class="items-grid"
+            >
+              <div
+                v-for="(item, index) in balanceData.items"
+                :key="`${item.name}-${index}`"
+                class="item-card"
+              >
+                <div class="item-header">
+                  <span class="item-name">{{ item.name }}</span>
+                  <span
+                    v-if="item.refreshable"
+                    class="refreshable-badge"
+                  >可刷新</span>
+                  <!-- PAY_PER_USE (quota=0) 不显示百分比；显示剩余百分比 -->
+                  <span
+                    v-if="item.quota > 0"
+                    class="item-percentage"
+                  >{{ Math.round(100 - item.percentage) }}%</span>
+                </div>
+                <!-- PAY_PER_USE (quota=0) 不显示进度条 -->
+                <div
+                  v-if="item.quota > 0"
+                  class="item-progress"
+                >
+                  <div
+                    class="item-progress-fill"
+                    :style="{
+                      width: item.percentage + '%',
+                      background: getItemProgressColor(item.percentage)
+                    }"
+                  />
+                </div>
+                <div class="item-meta">
+                  <span class="item-used">{{ formatItemUsed(item) }}</span>
+                  <span class="item-reset">{{ formatItemReset(item) }}</span>
+                </div>
+              </div>
             </div>
-            <div class="status-info">
-              <span class="status-title">{{ statusLabel }}</span>
-              <p v-if="statusData.description" class="status-description">{{ statusData.description }}</p>
+
+            <!-- 旧版额度使用（无 items 时的 fallback） -->
+            <div
+              v-else-if="balanceData.quota && balanceData.usedQuota !== undefined"
+              class="quota-section"
+            >
+              <div class="section-header">
+                <svg
+                  width="16"
+                  height="16"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                >
+                  <circle
+                    cx="12"
+                    cy="12"
+                    r="10"
+                    stroke="currentColor"
+                    stroke-width="2"
+                  />
+                  <path
+                    d="M12 6v6l4 2"
+                    stroke="currentColor"
+                    stroke-width="2"
+                    stroke-linecap="round"
+                  />
+                </svg>
+                <span>额度使用</span>
+              </div>
+              <div class="quota-info">
+                <div class="quota-used">
+                  {{ formatUsedQuota(balanceData.usedQuota ?? 0, balanceData.quota ?? 0) }} {{ balanceData.currency }}
+                </div>
+                <div class="quota-progress">
+                  <div
+                    class="quota-progress-fill"
+                    :style="{ width: (balanceData.usedQuota / balanceData.quota * 100) + '%', background: balanceColor }"
+                  />
+                </div>
+              </div>
             </div>
-          </div>
-        </template>
+          </template>
+
+          <!-- Status 类型展示 -->
+          <template v-else-if="currentDataType === 'status' && statusData">
+            <div class="status-main">
+              <div
+                class="status-indicator-large"
+                :style="{ background: statusColor }"
+              >
+                <span class="status-icon">{{ statusData.indicator === 'none' ? '✓' : '!' }}</span>
+              </div>
+              <div class="status-info">
+                <span class="status-title">{{ statusLabel }}</span>
+                <p
+                  v-if="statusData.description"
+                  class="status-description"
+                >
+                  {{ statusData.description }}
+                </p>
+              </div>
+            </div>
+          </template>
         </div><!-- /.data-section -->
 
         <!-- 连接监控 -->
         <div class="monitoring-section">
           <div class="section-header">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
-              <rect x="2" y="3" width="20" height="14" rx="2" stroke="currentColor" stroke-width="2" />
-              <line x1="8" y1="21" x2="16" y2="21" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-              <line x1="12" y1="17" x2="12" y2="21" stroke="currentColor" stroke-width="2" />
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 24 24"
+              fill="none"
+            >
+              <rect
+                x="2"
+                y="3"
+                width="20"
+                height="14"
+                rx="2"
+                stroke="currentColor"
+                stroke-width="2"
+              />
+              <line
+                x1="8"
+                y1="21"
+                x2="16"
+                y2="21"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+              />
+              <line
+                x1="12"
+                y1="17"
+                x2="12"
+                y2="21"
+                stroke="currentColor"
+                stroke-width="2"
+              />
             </svg>
             <span>连接监控 (RELIABILITY LAYER)</span>
+          </div>
+          <div class="monitoring-grid">
+            <!-- 成功率 -->
+            <div class="monitoring-card">
+              <span class="monitoring-label">成功率</span>
+              <span
+                class="monitoring-value"
+                :class="successRateColorClass"
+              >{{ formatSuccessRate }}</span>
+            </div>
+            <!-- 平均延迟 -->
+            <div class="monitoring-card">
+              <span class="monitoring-label">平均延迟</span>
+              <span class="monitoring-value warning">{{ formatLatency }}</span>
+            </div>
+            <!-- 错误计数 -->
+            <div class="monitoring-card">
+              <span class="monitoring-label">错误计数</span>
+              <span
+                class="monitoring-value"
+                :class="errorCountColorClass"
+              >{{ healthData?.errorCount ?? 0 }}</span>
+            </div>
           </div>
         </div>
       </div>
@@ -1467,6 +1984,49 @@ onUnmounted(() => {
   color: var(--color-text-secondary);
   font-size: 0.8125rem;
   margin-bottom: var(--spacing-lg);
+}
+
+/* 连接监控网格 */
+.monitoring-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--spacing-md);
+}
+
+.monitoring-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: var(--spacing-xl) var(--spacing-lg);
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-xl);
+  text-align: center;
+  min-height: 100px;
+}
+
+.monitoring-label {
+  font-size: 0.875rem;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--spacing-md);
+}
+
+.monitoring-value {
+  font-size: 2rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.monitoring-value.success {
+  color: var(--color-accent-green);
+}
+
+.monitoring-value.warning {
+  color: var(--color-accent);
+}
+
+.monitoring-value.danger {
+  color: var(--color-accent-red);
 }
 
 .dimensions-grid {

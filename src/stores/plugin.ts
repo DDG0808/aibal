@@ -97,6 +97,16 @@ export const usePluginStore = defineStore('plugin', () => {
   // 插件执行错误（按插件 ID 存储，用于在 UI 显示具体错误信息）
   const pluginErrors = ref<Map<string, { code: string; message: string }>>(new Map());
 
+  // 请求统计（用于计算真实的成功率和错误计数）
+  interface RequestStats {
+    totalRequests: number;
+    successCount: number;
+    errorCount: number;
+    totalLatencyMs: number;
+    lastRequestTime: number;
+  }
+  const requestStats = ref<Map<string, RequestStats>>(new Map());
+
   // 当前选中的插件 ID（跨窗口同步）
   const selectedPluginId = ref<string>('');
 
@@ -107,13 +117,16 @@ export const usePluginStore = defineStore('plugin', () => {
   // 操作中的插件 (防止竞态)
   const operatingPlugins = ref<Set<string>>(new Set());
 
+  // 刷新 Promise 缓存（用于去重，多个调用者共享同一次刷新结果）
+  const refreshPromiseCache = new Map<string, Promise<PluginData | null>>();
+
   // 计算属性
   const enabledPlugins = computed(() => plugins.value.filter(p => p.enabled));
   const healthyPlugins = computed(() => plugins.value.filter(p => p.healthy));
   const totalCalls = computed(() => {
     let total = 0;
     pluginHealth.value.forEach(h => {
-      total += Math.floor(h.successRate * 100); // 模拟调用次数
+      total += h.totalCalls ?? 0;
     });
     return total;
   });
@@ -165,7 +178,28 @@ export const usePluginStore = defineStore('plugin', () => {
     }
   }
 
-  // 获取所有插件数据
+  // 获取所有插件的缓存数据（不执行插件，仅读取缓存）
+  async function fetchCachedData(): Promise<void> {
+    try {
+      const result = await safeInvoke<Result<PluginData[]>>('get_all_data');
+      if (result.success && result.data) {
+        const newMap = new Map(pluginData.value);
+        result.data.forEach(d => {
+          const existing = newMap.get(d.pluginId);
+          // 只在没有现有数据，或新数据更新时才更新
+          if (!existing || new Date(d.lastUpdated) >= new Date(existing.lastUpdated)) {
+            newMap.set(d.pluginId, d);
+          }
+        });
+        pluginData.value = newMap;
+        console.log('[Plugin] fetchCachedData 完成，数据条数:', newMap.size);
+      }
+    } catch (e) {
+      console.warn('[Plugin] fetchCachedData 失败:', e);
+    }
+  }
+
+  // 刷新所有插件数据（执行所有插件的 fetchData）
   async function fetchAllData(force = false): Promise<void> {
     isRefreshing.value = true;
     try {
@@ -274,12 +308,14 @@ export const usePluginStore = defineStore('plugin', () => {
     }
   }
 
-  // 刷新单个插件
-  async function refreshPlugin(id: string, force = false): Promise<PluginData | null> {
+  // 刷新单个插件（内部实现，不带去重）
+  async function doRefreshPlugin(id: string, force = false): Promise<PluginData | null> {
+    const startTime = Date.now();
     try {
-      console.log('[Plugin] refreshPlugin 开始:', id, 'force:', force);
+      console.log('[Plugin] doRefreshPlugin 开始:', id, 'force:', force);
       const result = await safeInvoke<Result<PluginData>>('refresh_plugin', { id, force });
-      console.log('[Plugin] refreshPlugin 原始返回:', id, JSON.stringify(result.data, null, 2));
+      const latencyMs = Date.now() - startTime;
+      console.log('[Plugin] doRefreshPlugin 原始返回:', id, JSON.stringify(result.data, null, 2));
       if (result.success && result.data) {
         // 创建新 Map 触发 Vue 响应式更新（ref<Map> 不追踪 Map.set）
         const newMap = new Map(pluginData.value);
@@ -291,19 +327,46 @@ export const usePluginStore = defineStore('plugin', () => {
           newErrors.delete(id);
           pluginErrors.value = newErrors;
         }
-        console.log('[Plugin] refreshPlugin 成功:', id, 'dataType:', result.data.dataType, 'Map size:', newMap.size);
+        // 更新健康统计（记录成功和延迟）
+        updateHealthStats(id, true, latencyMs);
+        console.log('[Plugin] doRefreshPlugin 成功:', id, 'dataType:', result.data.dataType, 'Map size:', newMap.size, 'latency:', latencyMs + 'ms');
         return result.data;
       }
-      if (!result.success) {
-        console.warn('[Plugin] refreshPlugin 失败:', id, result.error?.message);
-        error.value = result.error?.message ?? '刷新插件数据失败';
-      }
+      // 没有数据则视为失败（无论 result.success 是什么）
+      console.warn('[Plugin] doRefreshPlugin 失败:', id, result.error?.message ?? '无数据返回');
+      error.value = result.error?.message ?? '刷新插件数据失败';
+      // 更新健康统计（记录失败）
+      updateHealthStats(id, false);
       return null;
     } catch (e) {
-      console.error('[Plugin] refreshPlugin 异常:', id, e);
+      console.error('[Plugin] doRefreshPlugin 异常:', id, e);
       error.value = e instanceof Error ? e.message : '刷新插件数据失败';
+      // 更新健康统计（记录失败）
+      updateHealthStats(id, false);
       return null;
     }
+  }
+
+  // 刷新单个插件（带 Promise 去重，多个调用者共享同一次刷新结果）
+  async function refreshPlugin(id: string, force = false): Promise<PluginData | null> {
+    // 检查是否有正在进行的刷新
+    const existingPromise = refreshPromiseCache.get(id);
+    if (existingPromise) {
+      console.log('[Plugin] refreshPlugin 复用已有刷新:', id);
+      return existingPromise;
+    }
+
+    // 创建新的刷新 Promise 并缓存
+    const refreshPromise = doRefreshPlugin(id, force).finally(() => {
+      // 刷新完成后清除缓存（延迟 100ms 避免极端竞态）
+      setTimeout(() => {
+        refreshPromiseCache.delete(id);
+      }, 100);
+    });
+
+    refreshPromiseCache.set(id, refreshPromise);
+    console.log('[Plugin] refreshPlugin 创建新刷新:', id);
+    return refreshPromise;
   }
 
   // 获取插件配置（优先后端，fallback 本地存储）
@@ -575,11 +638,49 @@ export const usePluginStore = defineStore('plugin', () => {
   }
 
   // 设置插件错误（用于触发响应式更新）
-  function setPluginError(id: string, error: { code: string; message: string }): void {
+  function setPluginError(id: string, pluginError: { code: string; message: string }): void {
     const newErrors = new Map(pluginErrors.value);
-    newErrors.set(id, error);
+    newErrors.set(id, pluginError);
     pluginErrors.value = newErrors;
-    console.log('[Plugin] 插件错误已更新:', id, error.message, 'map size:', newErrors.size);
+    // 更新健康状态的 lastError，但不增加 errorCount（由 refreshPlugin 统一记录）
+    updateHealthError(id, pluginError.message);
+    console.log('[Plugin] 插件错误已更新:', id, pluginError.message, 'map size:', newErrors.size);
+  }
+
+  // 更新健康状态的错误信息（不增加 errorCount，仅更新 lastError 和 status）
+  function updateHealthError(id: string, _errorMessage?: string): void {
+    const currentHealth = pluginHealth.value.get(id);
+    const stats = requestStats.value.get(id);
+
+    // 根据当前统计数据计算状态
+    let status: 'healthy' | 'degraded' | 'unhealthy' | 'unknown' = 'degraded';
+    if (stats) {
+      const successRate = stats.totalRequests > 0 ? stats.successCount / stats.totalRequests : 0;
+      if (successRate < 0.5) {
+        status = 'unhealthy';
+      } else if (successRate < 0.9) {
+        status = 'degraded';
+      } else {
+        status = 'healthy';
+      }
+    }
+
+    const newHealth: PluginHealth = {
+      pluginId: id,
+      status,
+      successRate: currentHealth?.successRate ?? 0,
+      avgLatencyMs: currentHealth?.avgLatencyMs ?? 0,
+      p99LatencyMs: currentHealth?.p99LatencyMs ?? 0,
+      errorCount: currentHealth?.errorCount ?? 0,
+      totalCalls: currentHealth?.totalCalls ?? 0,
+      consecutiveFailures: (currentHealth?.consecutiveFailures ?? 0) + 1,
+      lastSuccess: currentHealth?.lastSuccess,
+      lastError: new Date().toISOString(),
+    };
+
+    const newHealthMap = new Map(pluginHealth.value);
+    newHealthMap.set(id, newHealth);
+    pluginHealth.value = newHealthMap;
   }
 
   // 清除插件错误
@@ -589,6 +690,68 @@ export const usePluginStore = defineStore('plugin', () => {
       newErrors.delete(id);
       pluginErrors.value = newErrors;
     }
+  }
+
+  // 更新健康统计（记录请求成功/失败）
+  function updateHealthStats(id: string, success: boolean, latencyMs?: number): void {
+    // 1. 更新请求统计
+    const stats = requestStats.value.get(id) || {
+      totalRequests: 0,
+      successCount: 0,
+      errorCount: 0,
+      totalLatencyMs: 0,
+      lastRequestTime: Date.now(),
+    };
+
+    stats.totalRequests++;
+    stats.lastRequestTime = Date.now();
+
+    if (success) {
+      stats.successCount++;
+      if (latencyMs !== undefined) {
+        stats.totalLatencyMs += latencyMs;
+      }
+    } else {
+      stats.errorCount++;
+    }
+
+    // 触发响应式更新
+    const newStats = new Map(requestStats.value);
+    newStats.set(id, stats);
+    requestStats.value = newStats;
+
+    // 2. 更新健康数据
+    const currentHealth = pluginHealth.value.get(id);
+    const successRate = stats.totalRequests > 0 ? stats.successCount / stats.totalRequests : 1;
+    const avgLatencyMs = stats.successCount > 0 ? stats.totalLatencyMs / stats.successCount : 0;
+
+    // 根据成功率判断健康状态
+    let status: 'healthy' | 'degraded' | 'unhealthy' | 'unknown' = 'healthy';
+    if (successRate < 0.5) {
+      status = 'unhealthy';
+    } else if (successRate < 0.9) {
+      status = 'degraded';
+    }
+
+    const newHealth: PluginHealth = {
+      pluginId: id,
+      status,
+      successRate,
+      avgLatencyMs: Math.round(avgLatencyMs),
+      p99LatencyMs: currentHealth?.p99LatencyMs ?? Math.round(avgLatencyMs * 1.5),
+      errorCount: stats.errorCount,
+      totalCalls: (currentHealth?.totalCalls ?? 0) + 1,
+      consecutiveFailures: success ? 0 : (currentHealth?.consecutiveFailures ?? 0) + 1,
+      lastSuccess: success ? new Date().toISOString() : currentHealth?.lastSuccess,
+      lastError: !success ? new Date().toISOString() : currentHealth?.lastError,
+    };
+
+    // 触发响应式更新
+    const newHealthMap = new Map(pluginHealth.value);
+    newHealthMap.set(id, newHealth);
+    pluginHealth.value = newHealthMap;
+
+    console.log('[Plugin] 健康统计已更新:', id, 'successRate:', (successRate * 100).toFixed(1) + '%', 'totalCalls:', newHealth.totalCalls);
   }
 
   // 监听其他窗口的插件选择
@@ -681,8 +844,8 @@ export const usePluginStore = defineStore('plugin', () => {
         selectedPluginId.value = firstPlugin.id;
       }
     }
-    // 5. 获取健康状态和所有插件数据（确保 UI 有数据可显示）
-    await Promise.all([fetchAllHealth(), fetchAllData()]);
+    // 5. 获取健康状态和缓存数据（不执行插件，快速初始化）
+    await Promise.all([fetchAllHealth(), fetchCachedData()]);
     // 6. 监听其他窗口的插件选择
     await setupPluginSelectionListener();
     // 7. 监听插件错误事件（用于 UI 显示错误状态）
@@ -867,6 +1030,7 @@ export const usePluginStore = defineStore('plugin', () => {
     clearPluginError,
     // 方法
     fetchPlugins,
+    fetchCachedData,
     fetchAllData,
     fetchAllHealth,
     isOperating,

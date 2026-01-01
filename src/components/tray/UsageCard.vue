@@ -90,7 +90,10 @@ const isPaygo = computed(() => isPayAsYouGo({
     </div>
 
     <!-- 进度条：仅包月模式显示 -->
-    <div v-if="!isPaygo" class="progress-bar">
+    <div
+      v-if="!isPaygo"
+      class="progress-bar"
+    >
       <div
         class="progress-fill"
         :style="{

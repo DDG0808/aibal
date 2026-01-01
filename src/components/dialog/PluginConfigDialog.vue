@@ -178,112 +178,112 @@ function getFieldError(key: string): string | undefined {
             v-else
             class="config-form"
           >
-          <!-- 状态消息 -->
-          <div
-            v-if="message"
-            class="status-message"
-            :class="message.type"
-          >
-            {{ message.text }}
-          </div>
+            <!-- 状态消息 -->
+            <div
+              v-if="message"
+              class="status-message"
+              :class="message.type"
+            >
+              {{ message.text }}
+            </div>
 
-          <!-- 字段列表 -->
-          <div
-            v-for="field in fields"
-            :key="field.key"
-            class="form-field"
-          >
-            <label class="field-label">
-              {{ field.label || field.key }}
-              <span
-                v-if="field.required"
-                class="required-mark"
-              >*</span>
-            </label>
+            <!-- 字段列表 -->
+            <div
+              v-for="field in fields"
+              :key="field.key"
+              class="form-field"
+            >
+              <label class="field-label">
+                {{ field.label || field.key }}
+                <span
+                  v-if="field.required"
+                  class="required-mark"
+                >*</span>
+              </label>
 
-            <!-- String 输入框 -->
-            <template v-if="field.type === 'string'">
-              <div class="field-input-wrapper">
-                <input
-                  v-model="formData[field.key]"
-                  :type="field.secret ? 'password' : 'text'"
-                  class="field-input"
-                  :class="{ 'has-error': getFieldError(field.key) }"
-                  :placeholder="field.description"
-                >
-              </div>
-            </template>
-
-            <!-- Number 输入框 -->
-            <template v-else-if="field.type === 'number'">
-              <div class="field-input-wrapper">
-                <input
-                  v-model.number="formData[field.key]"
-                  type="number"
-                  class="field-input"
-                  :class="{ 'has-error': getFieldError(field.key) }"
-                  :min="field.min"
-                  :max="field.max"
-                  :placeholder="field.description"
-                >
-              </div>
-            </template>
-
-            <!-- Boolean Toggle -->
-            <template v-else-if="field.type === 'boolean'">
-              <div class="toggle-field">
-                <label class="toggle">
+              <!-- String 输入框 -->
+              <template v-if="field.type === 'string'">
+                <div class="field-input-wrapper">
                   <input
                     v-model="formData[field.key]"
-                    type="checkbox"
+                    :type="field.secret ? 'password' : 'text'"
+                    class="field-input"
+                    :class="{ 'has-error': getFieldError(field.key) }"
+                    :placeholder="field.description"
                   >
-                  <span class="toggle-slider" />
-                </label>
-              </div>
-            </template>
+                </div>
+              </template>
 
-            <!-- Select 下拉 -->
-            <template v-else-if="field.type === 'select' && field.options">
-              <div class="field-input-wrapper">
-                <select
-                  v-model="formData[field.key]"
-                  class="field-select"
-                  :class="{ 'has-error': getFieldError(field.key) }"
-                >
-                  <option
-                    value=""
-                    disabled
+              <!-- Number 输入框 -->
+              <template v-else-if="field.type === 'number'">
+                <div class="field-input-wrapper">
+                  <input
+                    v-model.number="formData[field.key]"
+                    type="number"
+                    class="field-input"
+                    :class="{ 'has-error': getFieldError(field.key) }"
+                    :min="field.min"
+                    :max="field.max"
+                    :placeholder="field.description"
                   >
-                    请选择...
-                  </option>
-                  <option
-                    v-for="opt in field.options"
-                    :key="opt.value"
-                    :value="opt.value"
+                </div>
+              </template>
+
+              <!-- Boolean Toggle -->
+              <template v-else-if="field.type === 'boolean'">
+                <div class="toggle-field">
+                  <label class="toggle">
+                    <input
+                      v-model="formData[field.key]"
+                      type="checkbox"
+                    >
+                    <span class="toggle-slider" />
+                  </label>
+                </div>
+              </template>
+
+              <!-- Select 下拉 -->
+              <template v-else-if="field.type === 'select' && field.options">
+                <div class="field-input-wrapper">
+                  <select
+                    v-model="formData[field.key]"
+                    class="field-select"
+                    :class="{ 'has-error': getFieldError(field.key) }"
                   >
-                    {{ opt.label }}
-                  </option>
-                </select>
-              </div>
-            </template>
+                    <option
+                      value=""
+                      disabled
+                    >
+                      请选择...
+                    </option>
+                    <option
+                      v-for="opt in field.options"
+                      :key="opt.value"
+                      :value="opt.value"
+                    >
+                      {{ opt.label }}
+                    </option>
+                  </select>
+                </div>
+              </template>
 
-            <!-- 字段描述 -->
-            <p
-              v-if="field.description && field.type !== 'string' && field.type !== 'number'"
-              class="field-hint"
-            >
-              {{ field.description }}
-            </p>
+              <!-- 字段描述 -->
+              <p
+                v-if="field.description && field.type !== 'string' && field.type !== 'number'"
+                class="field-hint"
+              >
+                {{ field.description }}
+              </p>
 
-            <!-- 字段错误 -->
-            <p
-              v-if="getFieldError(field.key)"
-              class="field-error"
-            >
-              {{ getFieldError(field.key) }}
-            </p>
+              <!-- 字段错误 -->
+              <p
+                v-if="getFieldError(field.key)"
+                class="field-error"
+              >
+                {{ getFieldError(field.key) }}
+              </p>
+            </div>
           </div>
-        </div>
         </div>
 
         <!-- 操作按钮 -->

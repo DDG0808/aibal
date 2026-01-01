@@ -339,7 +339,6 @@ function handleKeydown(event: KeyboardEvent, path: string) {
         </ul>
       </div>
     </nav>
-
   </aside>
 </template>
 

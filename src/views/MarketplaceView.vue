@@ -349,9 +349,15 @@ const showNoResults = computed(() => {
         v-else-if="loadError"
         class="error-state"
       >
-        <div class="error-icon">⚠️</div>
-        <p class="error-message">{{ loadError }}</p>
-        <p class="error-hint">请检查网络连接或在设置中配置仓库地址</p>
+        <div class="error-icon">
+          ⚠️
+        </div>
+        <p class="error-message">
+          {{ loadError }}
+        </p>
+        <p class="error-hint">
+          请检查网络连接或在设置中配置仓库地址
+        </p>
         <button
           class="retry-btn"
           @click="refreshPlugins"
@@ -365,9 +371,15 @@ const showNoResults = computed(() => {
         v-else-if="allPlugins.length === 0 && !isInSearchMode"
         class="empty-state"
       >
-        <div class="empty-icon">📦</div>
-        <p class="empty-message">暂无可用插件</p>
-        <p class="empty-hint">请检查仓库配置或稍后重试</p>
+        <div class="empty-icon">
+          📦
+        </div>
+        <p class="empty-message">
+          暂无可用插件
+        </p>
+        <p class="empty-hint">
+          请检查仓库配置或稍后重试
+        </p>
         <button
           class="retry-btn"
           @click="refreshPlugins"
@@ -494,8 +506,12 @@ const showNoResults = computed(() => {
         @click.self="closeSignatureDialog"
       >
         <div class="dialog-content">
-          <div class="dialog-icon">⚠️</div>
-          <h3 class="dialog-title">安装未签名插件</h3>
+          <div class="dialog-icon">
+            ⚠️
+          </div>
+          <h3 class="dialog-title">
+            安装未签名插件
+          </h3>
           <p class="dialog-message">
             插件 <strong>{{ confirmingPluginName }}</strong> 未经过官方签名验证。
           </p>

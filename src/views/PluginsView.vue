@@ -336,7 +336,7 @@ function getConfirmDescription(): string {
             <span class="stat-label">总调用量</span>
           </div>
           <div class="stat-value">
-            <span class="stat-number">{{ (stats.totalCalls / 10000).toFixed(2) }}万</span>
+            <span class="stat-number">{{ stats.totalCalls.toLocaleString() }}次</span>
             <span class="stat-sublabel">今日</span>
           </div>
         </div>
